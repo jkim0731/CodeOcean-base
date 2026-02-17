@@ -24,4 +24,5 @@ RUN pip3 install -U --no-cache-dir \
     aind-qcportal-schema \
     matplotlib \
     pydantic==2.8.2 \
-    pydantic_settings
+    pydantic_settings \
+    statsmodels
