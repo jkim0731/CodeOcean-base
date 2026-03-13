@@ -19,6 +19,7 @@ RUN pip3 install -U --no-cache-dir \
     aind-qcportal-schema \
     jax \
     joblib \
+    jupyterlab \
     matplotlib \
     pydantic==2.8.2 \
     pydantic_settings \
