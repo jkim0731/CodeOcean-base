@@ -156,6 +156,31 @@ def bright(
 
 
 # -----------------------------
+#  Baselines using JAX
+# -----------------------------
+def single_exp_jax(params, t):
+    b_inf, b, tau = params
+    return b_inf * (1 + b * jnp.exp(-t / tau))
+
+
+def double_exp_jax(params, t):
+    b_inf, b_slow, b_fast, t_slow, t_fast = params
+    return b_inf * (1 + b_slow * jnp.exp(-t / t_slow) + b_fast * jnp.exp(-t / t_fast))
+
+
+def bright_jax(params, t):
+    b_inf, b_slow, b_fast, b_rapid, b_bright, t_slow, t_fast, t_rapid, t_bright = params
+    A = (
+        1
+        + b_slow * jnp.exp(-t / t_slow)
+        + b_fast * jnp.exp(-t / t_fast)
+        + b_rapid * jnp.exp(-t / t_rapid)
+    )
+    B = 1 - b_bright * jnp.exp(-t / t_bright)
+    return b_inf * A * B
+
+
+# -----------------------------
 #  M-estimators
 # -----------------------------
 class AsymmetricTukeyBiweight(RobustNorm):
@@ -482,4 +507,7 @@ def nonlinear_fit(
         x = x_new
 
     res.sigma = float(sigma)
-    return np.array(model(x, t_)), res
+    fitted = np.array(model(x, t_))
+    u = (np.array(y_) - fitted) / float(sigma)
+    res.weights = np.array(M.weights(u))
+    return fitted, res
