@@ -1,9 +1,11 @@
 import inspect
-from typing import Callable
+from typing import Callable, Literal
 import jax
 import jax.numpy as jnp
 import numpy as np
+from aind_ophys_utils.signal_utils import percentile_filter
 from scipy.optimize import minimize, OptimizeResult
+from statsmodels.nonparametric._smoothers_lowess import lowess as _sm_lowess
 from statsmodels.robust import scale
 from statsmodels.robust.norms import RobustNorm
 
@@ -317,7 +319,7 @@ def nonlinear_fit(
     maxiter: int = 5,
     tol: float = 1e-3,
     optimizer_options: dict | None = None,
-    backend: str = "numpy",
+    backend: Literal["numpy", "jax"] = "numpy",
     dtype=jnp.float64,
 ) -> tuple[np.ndarray, OptimizeResult]:
     """
@@ -377,9 +379,9 @@ def nonlinear_fit(
     fitted : np.ndarray
         Model prediction at the converged parameters, shape ``(N,)``.
     res : OptimizeResult
-        Result from the final ``scipy.optimize.minimize`` call, with an
-        additional attribute ``res.sigma`` (robust scale estimate, set only
-        when ``M`` is not ``None``).
+        Result from the final ``scipy.optimize.minimize`` call, with 
+        additional attributes ``res.sigma`` and ``res.weights``
+        (robust scale estimate and weights, set only when ``M`` is not ``None``).
     """
     if optimizer_options is None:
         optimizer_options = {"maxiter": 20000, "ftol": 1e-12, "gtol": 1e-10}
@@ -458,26 +460,24 @@ def nonlinear_fit(
     provides_grad = use_jax or has_return_jac
 
     # ----------------------------
-    # OLS
+    # OLS — always runs; also serves as IRLS pre-pass for cold starts
     # ----------------------------
-    if M is None:
-        fun_or_pair = make_objective()
-        fun, jac_ = fun_or_pair if use_jax else (fun_or_pair, provides_grad)
-        res = minimize(
-            fun,
-            x,
-            bounds=bounds,
-            method=optimizer,
-            jac=jac_,
-            options=optimizer_options,
-        )
-        fitted = model(jnp.asarray(res.x, dtype=dtype) if use_jax else res.x, t_)
-        return np.array(fitted), res
+    fun_or_pair = make_objective()
+    fun, jac_ = fun_or_pair if use_jax else (fun_or_pair, provides_grad)
+    res = minimize(
+        fun,
+        x,
+        bounds=bounds,
+        method=optimizer,
+        jac=jac_,
+        options=optimizer_options,
+    )
+    x = jnp.asarray(res.x, dtype=dtype) if use_jax else res.x
 
     # ----------------------------
     # IRLS
     # ----------------------------
-    for _ in range(maxiter):
+    for _ in range(max(1, maxiter) if M is not None else 0):
         resid = y_ - model(x, t_)
 
         if use_jax:
@@ -506,8 +506,184 @@ def nonlinear_fit(
             break
         x = x_new
 
-    res.sigma = float(sigma)
     fitted = np.array(model(x, t_))
-    u = (np.array(y_) - fitted) / float(sigma)
-    res.weights = np.array(M.weights(u))
+    if M is not None:
+        res.sigma = float(sigma)
+        u = (np.array(y_) - fitted) / float(sigma)
+        res.weights = np.array(M.weights(u))
     return fitted, res
+
+
+def _robust_lowess(
+    y: np.ndarray,
+    t: np.ndarray,
+    frac: float = 0.1,
+    weights: np.ndarray | None = None,
+    M: RobustNorm | None = None,
+    maxiter: int = 5,
+    tol: float = 1e-3,
+) -> np.ndarray:
+    """
+    Robust LOWESS smoother with optional outer IRLS loop.
+
+    Parameters
+    ----------
+    y : np.ndarray
+        Raw signal.
+    t : np.ndarray
+        Timestamps (must be sorted).
+    frac : float
+        LOWESS bandwidth as fraction of data length.
+    weights : np.ndarray or None
+        Initial point weights, e.g. res.weights from trend fit.
+        Warm-starts the IRLS loop. Defaults to uniform weights.
+    M : RobustNorm or None
+        If None, single-pass LOWESS. Otherwise, outer IRLS using M.weights.
+        Any M-estimator with a .weights(z) method works, including
+        AsymmetricTukeyBiweight and OneSidedTukeyBiweight.
+    maxiter : int
+        Maximum IRLS iterations. Ignored when M is None.
+    tol : float
+        Convergence tolerance on max weight change between iterations.
+
+    Returns
+    -------
+    fluctuation : np.ndarray
+        Smoothed signal.
+    """
+    y = y.astype(np.float64)
+    t = t.astype(np.float64)
+    w_current = (
+        np.asarray(weights, dtype=np.float64)
+        if weights is not None
+        else np.ones(len(y), dtype=np.float64)
+    )
+    delta = 0.01 * (t[-1] - t[0])
+
+    for _ in range(max(1, maxiter) if M is not None else 1):
+        fluctuation = _sm_lowess(
+            y, t, t,
+            resid_weights=w_current,
+            frac=frac,
+            it=0,
+            delta=delta,
+            is_sorted=True,
+        )[0][:, 1]
+
+        if M is None:
+            break
+
+        resid = y - fluctuation
+        sigma = np.median(np.abs(resid)) * 1.4826
+        if sigma == 0:
+            sigma = np.std(resid)
+
+        w_new = M.weights(resid / sigma)
+        if np.max(np.abs(w_new - w_current)) < tol:
+            break
+        w_current = w_new
+
+    return fluctuation
+
+
+def fit_baseline_fluctuations(
+    trace: np.ndarray,
+    t: np.ndarray,
+    trend: np.ndarray | None = None,
+    mode: Literal["ratio", "subtract"] = "ratio",
+    frac: float = 0.1,
+    weights: np.ndarray | None = None,
+    method: Literal["lowess", "percentile"] = "lowess",
+    M: RobustNorm | None = None,
+    maxiter: int = 5,
+    tol: float = 1e-3,
+    percentile: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Estimate baseline fluctuations from a fluorescence trace.
+
+    Optionally detrends by a slow trend (e.g. from :func:`nonlinear_fit`),
+    estimates fluctuations via LOWESS or a percentile filter, then retrend
+    to recover the full baseline.
+
+    Parameters
+    ----------
+    trace : np.ndarray
+        Raw fluorescence signal, shape ``(N,)``.
+    t : np.ndarray
+        Timestamps, shape ``(N,)``. Must be sorted in ascending order.
+    trend : np.ndarray or None
+        Slow trend component (e.g. bleaching fit), shape ``(N,)``.
+        If ``None``, no detrending is applied and ``baseline == fluctuation``.
+    mode : {"ratio", "subtract"}
+        How to detrend. ``"ratio"`` divides ``trace`` by ``trend``
+        (use when fluorescence is multiplicatively modulated);
+        ``"subtract"`` subtracts ``trend`` additively.
+    frac : float
+        Bandwidth as a fraction of ``N``. Controls the smoothing window
+        for both ``"lowess"`` (LOWESS bandwidth) and ``"percentile"``
+        (filter half-width).
+    weights : np.ndarray or None
+        Per-point weights, shape ``(N,)``. For ``"lowess"``, warm-starts the
+        IRLS loop (e.g. pass ``res.weights`` from :func:`nonlinear_fit`).
+        For ``"percentile"``, used to estimate the baseline percentile when
+        ``percentile=None``.
+    method : {"lowess", "percentile"}
+        Smoothing method.
+        ``"lowess"`` — robust locally weighted regression via
+        :func:`_robust_lowess`.
+        ``"percentile"`` — sliding percentile filter via
+        :func:`percentile_filter`.
+    M : RobustNorm or None
+        *LOWESS only.* M-estimator with a ``.weights(z)`` method
+        (e.g. :class:`OneSidedTukeyBiweight`). If ``None``, single-pass
+        LOWESS without outer IRLS. Ignored when ``method="percentile"``.
+    maxiter : int
+        *LOWESS only.* Maximum number of IRLS outer iterations.
+        Ignored when ``M=None`` or ``method="percentile"``.
+    tol : float
+        *LOWESS only.* IRLS convergence tolerance on the maximum absolute
+        weight change between iterations.
+        Ignored when ``M=None`` or ``method="percentile"``.
+    percentile : float or None
+        *Percentile only.* Percentile to track (0–100). If ``None``,
+        estimated from ``weights``: the percentile rank of the
+        weighted mean of ``y`` among its own samples, clipped to ``[5, 50]``.
+        Ignored when ``method="lowess"``.
+
+    Returns
+    -------
+    baseline : np.ndarray
+        Full baseline in the original signal space, shape ``(N,)``.
+        Equal to ``fluctuation`` when ``trend=None``.
+    fluctuation : np.ndarray
+        Detrended baseline estimate, shape ``(N,)``.
+        Ratio relative to ``trend`` when ``mode="ratio"``;
+        additive residual when ``mode="subtract"``.
+    """
+    # detrend — shared
+    if trend is None:
+        y = trace.astype(np.float64)
+    elif mode == "ratio":
+        y = (trace / np.where(trend != 0, trend, np.nan)).astype(np.float64)
+    else:
+        y = (trace - trend).astype(np.float64)
+
+    # dispatch — method-specific, receives y, returns fluctuation
+    if method == "lowess":
+        fluctuation = _robust_lowess(y, t, frac, weights, M, maxiter, tol)
+    elif method == "percentile":
+        size = max(1, round(frac * len(trace)))
+        if percentile is None:
+            # estimate from weights if available
+            mu_w = np.average(y, weights=weights) if weights is not None else np.median(y)
+            percentile = np.clip(np.mean(y <= mu_w) * 100, 5, 50)
+        fluctuation = percentile_filter(y, percentile, size)
+    else:
+        raise ValueError(f"Unknown method: {method!r}")
+
+    # retrend — shared
+    if trend is None:
+        return fluctuation, fluctuation
+    baseline = trend * fluctuation if mode == "ratio" else trend + fluctuation
+    return baseline, fluctuation
