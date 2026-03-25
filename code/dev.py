@@ -567,7 +567,6 @@ def _robust_lowess(
             frac=frac,
             it=0,
             delta=delta,
-            is_sorted=True,
         )[0][:, 1]
 
         if M is None:
