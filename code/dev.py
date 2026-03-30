@@ -429,16 +429,22 @@ class TukeyBiweight(AsymmetricTukeyBiweight):
 #  Fitting Functions
 # -----------------------------
 def nonlinear_fit(
+    # --- data / model ---
     trace: np.ndarray,
     t: np.ndarray,
     model: Callable,
-    init_params: np.ndarray,
+    x0: np.ndarray,
     bounds: tuple[tuple[float, float], ...] | None = None,
+    # --- robust / IRLS ---
     M: RobustNorm | None = None,
-    optimizer: str = "L-BFGS-B",
+    weights: np.ndarray | None = None,
+    fixed_sigma: float | None = None,
     maxiter: int = 5,
     tol: float = 1e-3,
+    # --- optimizer ---
+    optimizer: str = "L-BFGS-B",
     optimizer_options: dict | None = None,
+    # --- backend ---
     backend: Literal["numpy", "jax"] = "numpy",
     dtype=jnp.float64,
 ) -> tuple[np.ndarray, OptimizeResult]:
@@ -466,7 +472,7 @@ def nonlinear_fit(
         returning ``(prediction, J)`` where ``J`` has shape ``(N, n_params)``.
         For the JAX backend, it's wrapped automatically if the model has an
         xp parameter.
-    init_params : np.ndarray
+    x0 : np.ndarray
         Initial parameter vector, shape ``(n_params,)``.
     bounds : sequence of (min, max) pairs or None
         Parameter bounds passed to ``scipy.optimize.minimize``.
@@ -476,13 +482,22 @@ def nonlinear_fit(
         Otherwise → iteratively re-weighted least squares (IRLS) using
         ``M.rho`` for the loss and ``M.psi`` for the gradient.
         For the JAX backend, it's converted automatically via ``with_xp(jnp)``.
-    optimizer : str
-        Solver passed to ``scipy.optimize.minimize``, default ``"L-BFGS-B"``.
+    weights : np.ndarray or None
+        Per-point weights, shape ``(N,)``, multiplied into the OLS loss only;
+        does not affect the robust IRLS objective. When ``M=None``, this
+        performs weighted OLS. When ``M`` is set, it warm-starts the OLS
+        pre-pass from a prior fit's ``res.weights``. ``None`` → uniform weights.
+    fixed_sigma : float or None
+        Fixed robust scale estimate. When provided, replaces the per-iteration
+        MAD estimate in the IRLS loop. Useful when the scale is known in
+        advance or inherited from a previous fit.
     maxiter : int
         Maximum number of IRLS outer iterations. Ignored when ``M=None``.
     tol : float
         IRLS convergence tolerance on the relative parameter change
         ``‖x_new − x‖ / (‖x‖ + ε)``.
+    optimizer : str
+        Solver passed to ``scipy.optimize.minimize``, default ``"L-BFGS-B"``.
     optimizer_options : dict or None
         Options forwarded to ``scipy.optimize.minimize``.
         Defaults to ``{"maxiter": 20000, "ftol": 1e-12, "gtol": 1e-10}``.
@@ -520,7 +535,8 @@ def nonlinear_fit(
     if use_jax:
         t_ = jnp.asarray(t, dtype=dtype)
         y_ = jnp.asarray(trace, dtype=dtype)
-        x = jnp.asarray(init_params, dtype=dtype)
+        x = jnp.asarray(x0, dtype=dtype)
+        w_ = jnp.asarray(weights, dtype=dtype) if weights is not None else None
 
         def _make_obj(loss_and_grad_fn):
             cache = {}
@@ -533,7 +549,8 @@ def nonlinear_fit(
             return fun, lambda theta: cache["g"]
 
         def _ols_loss(theta):
-            return jnp.sum((y_ - model(theta, t_)) ** 2)
+            r = y_ - model(theta, t_)
+            return jnp.sum(w_ * r**2) if w_ is not None else jnp.sum(r**2)
 
         ols_val_grad = jax.jit(jax.value_and_grad(_ols_loss))
 
@@ -546,7 +563,8 @@ def nonlinear_fit(
     else:
         t_ = np.asarray(t)
         y_ = np.asarray(trace)
-        x = np.asarray(init_params, dtype=float).copy()
+        x = np.asarray(x0, dtype=float).copy()
+        w_ = np.asarray(weights) if weights is not None else None
 
     # ----------------------------
     # objective factories
@@ -558,9 +576,11 @@ def nonlinear_fit(
                 if has_return_jac:
                     y_pred, J = model(theta, t_, return_jac=True)
                     r = y_ - y_pred
+                    if w_ is not None:
+                        return np.sum(w_ * r**2), -2.0 * (J.T @ (w_ * r))
                     return np.sum(r**2), -2.0 * J.T @ r
                 r = y_ - model(theta, t_)
-                return np.sum(r**2)
+                return np.sum(w_ * r**2) if w_ is not None else np.sum(r**2)
 
         else:
 
@@ -606,15 +626,17 @@ def nonlinear_fit(
     for _ in range(max(1, maxiter) if M is not None else 0):
         resid = y_ - model(x, t_)
 
-        if use_jax:
-            sigma = jnp.median(jnp.abs(resid)) * 1.4826
-            sigma = jnp.where(sigma == 0, jnp.std(resid), sigma)
+        if fixed_sigma is not None:  # use fixed sigma if provided
+            _sigma = fixed_sigma
+        elif use_jax:
+            _sigma = jnp.median(jnp.abs(resid)) * 1.4826
+            _sigma = jnp.where(_sigma == 0, jnp.std(resid), _sigma)
         else:
-            sigma = scale.mad(resid, center=0)
-            if sigma == 0:
-                sigma = np.std(resid)
+            _sigma = scale.mad(resid, center=0)
+            if _sigma == 0:
+                _sigma = np.std(resid)
 
-        fun_or_pair = make_objective(sigma)
+        fun_or_pair = make_objective(_sigma)
         fun, jac_ = fun_or_pair if use_jax else (fun_or_pair, provides_grad)
         res = minimize(
             fun,
@@ -634,18 +656,22 @@ def nonlinear_fit(
 
     fitted = np.array(model(x, t_))
     if M is not None:
-        res.sigma = float(sigma)
-        u = (np.array(y_) - fitted) / float(sigma)
+        res.sigma = float(_sigma)
+        u = (np.array(y_) - fitted) / float(_sigma)
         res.weights = np.array(M.weights(u))
     return fitted, res
 
 
 def robust_lowess(
+    # --- data ---
     y: np.ndarray,
     t: np.ndarray,
+    # --- smoother ---
     frac: float = 0.1,
-    weights: np.ndarray | None = None,
+    # --- robust / IRLS ---
     M: RobustNorm | None = None,
+    weights: np.ndarray | None = None,
+    fixed_sigma: float | None = None,
     maxiter: int = 5,
     tol: float = 1e-3,
 ) -> tuple[np.ndarray, np.ndarray, float | None]:
@@ -660,13 +686,17 @@ def robust_lowess(
         Timestamps (must be sorted).
     frac : float
         LOWESS bandwidth as fraction of data length.
-    weights : np.ndarray or None
-        Initial point weights, e.g. res.weights from trend fit.
-        Warm-starts the IRLS loop. Defaults to uniform weights.
     M : RobustNorm or None
         If None, single-pass LOWESS. Otherwise, outer IRLS using M.weights.
         Any M-estimator with a .weights(z) method works, including
         AsymmetricTukeyBiweight and OneSidedTukeyBiweight.
+    weights : np.ndarray or None
+        Initial point weights, e.g. res.weights from trend fit.
+        Warm-starts the IRLS loop. Defaults to uniform weights.
+    fixed_sigma : float or None
+        Fixed robust scale estimate. When provided, replaces the per-iteration
+        MAD estimate in the IRLS loop. Useful when the scale is known in
+        advance or inherited from a previous fit.
     maxiter : int
         Maximum IRLS iterations. Ignored when M is None.
     tol : float
@@ -708,9 +738,12 @@ def robust_lowess(
             break
 
         resid = y - fluctuation
-        sigma = np.median(np.abs(resid)) * 1.4826
-        if sigma == 0:
-            sigma = np.std(resid)
+        if fixed_sigma is not None:
+            sigma = fixed_sigma
+        else:
+            sigma = np.median(np.abs(resid)) * 1.4826
+            if sigma == 0:
+                sigma = np.std(resid)
 
         w_new = M.weights(resid / sigma)
         if np.max(np.abs(w_new - w_current)) < tol:
@@ -721,16 +754,21 @@ def robust_lowess(
 
 
 def fit_baseline_fluctuations(
+    # --- data ---
     trace: np.ndarray,
     t: np.ndarray,
     trend: np.ndarray | None = None,
+    # --- smoother ---
     mode: Literal["ratio", "subtract"] = "ratio",
     frac: float = 0.1,
-    weights: np.ndarray | None = None,
     method: Literal["lowess", "percentile"] = "lowess",
+    # --- robust / IRLS ---
     M: RobustNorm | None = None,
+    weights: np.ndarray | None = None,
+    fixed_sigma: float | None = None,
     maxiter: int = 5,
     tol: float = 1e-3,
+    # --- percentile ---
     percentile: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
     """
@@ -757,11 +795,6 @@ def fit_baseline_fluctuations(
         Bandwidth as a fraction of ``N``. Controls the smoothing window
         for both ``"lowess"`` (LOWESS bandwidth) and ``"percentile"``
         (filter half-width).
-    weights : np.ndarray or None
-        Per-point weights, shape ``(N,)``. For ``"lowess"``, warm-starts the
-        IRLS loop (e.g. pass ``res.weights`` from :func:`nonlinear_fit`).
-        For ``"percentile"``, used to estimate the baseline percentile when
-        ``percentile=None``.
     method : {"lowess", "percentile"}
         Smoothing method.
         ``"lowess"`` — robust locally weighted regression via
@@ -772,6 +805,15 @@ def fit_baseline_fluctuations(
         *LOWESS only.* M-estimator with a ``.weights(z)`` method
         (e.g. :class:`OneSidedTukeyBiweight`). If ``None``, single-pass
         LOWESS without outer IRLS. Ignored when ``method="percentile"``.
+    weights : np.ndarray or None
+        Per-point weights, shape ``(N,)``. For ``"lowess"``, warm-starts the
+        IRLS loop (e.g. pass ``res.weights`` from :func:`nonlinear_fit`).
+        For ``"percentile"``, used to estimate the baseline percentile when
+        ``percentile=None``.
+    fixed_sigma : float or None
+        Fixed robust scale estimate. When provided, replaces the per-iteration
+        MAD estimate in the IRLS loop. Useful when the scale is known in
+        advance or inherited from a previous fit.
     maxiter : int
         *LOWESS only.* Maximum number of IRLS outer iterations.
         Ignored when ``M=None`` or ``method="percentile"``.
@@ -809,7 +851,7 @@ def fit_baseline_fluctuations(
 
     # dispatch — method-specific, receives y, returns fluctuation
     if method == "lowess":
-        fluctuation, w, sigma = robust_lowess(y, t, frac, weights, M, maxiter, tol)
+        fluctuation, w, sigma = robust_lowess(y, t, frac, M, weights, fixed_sigma, maxiter, tol)
         info = {"lowess_weights": w, "lowess_sigma": sigma}
     elif method == "percentile":
         size = max(1, round(frac * len(trace)))
@@ -832,22 +874,30 @@ def fit_baseline_fluctuations(
 
 
 def fit_baseline(
+    # --- data / model ---
     trace: np.ndarray,
     t: np.ndarray,
     model: Callable,
-    init_params: np.ndarray,
+    x0: np.ndarray,
     bounds: tuple[tuple[float, float], ...] | None = None,
+    # --- robust / IRLS ---
     M: RobustNorm | None = None,
     M_fluctuations: RobustNorm | None = None,
-    optimizer: str = "L-BFGS-B",
-    optimizer_options: dict | None = None,
-    backend: Literal["numpy", "jax"] = "numpy",
+    weights: np.ndarray | None = None,
+    fixed_sigma: float | None = None,
+    maxiter: int = 5,
+    tol: float = 1e-3,
+    # --- smoother ---
     mode: Literal["ratio", "subtract"] = "ratio",
     frac: float = 0.1,
     method: Literal["lowess", "percentile"] = "lowess",
-    maxiter: int = 5,
-    tol: float = 1e-3,
+    # --- percentile ---
     percentile: float | None = None,
+    # --- optimizer ---
+    optimizer: str = "L-BFGS-B",
+    optimizer_options: dict | None = None,
+    # --- backend ---
+    backend: Literal["numpy", "jax"] = "numpy",
     dtype=jnp.float64,
 ) -> tuple[np.ndarray, np.ndarray, OptimizeResult, dict]:
     """
@@ -866,7 +916,7 @@ def fit_baseline(
     model : callable
         Parametric trend model, e.g. :func:`single_exp` or :func:`double_exp`.
         See :func:`nonlinear_fit` for calling conventions.
-    init_params : np.ndarray
+    x0 : np.ndarray
         Initial parameter vector for ``model``, shape ``(n_params,)``.
     bounds : sequence of (min, max) pairs or None
         Parameter bounds passed to ``scipy.optimize.minimize``.
@@ -879,14 +929,20 @@ def fit_baseline(
         M-estimator for the fluctuation fit (:func:`fit_baseline_fluctuations`).
         Falls back to ``M.with_xp(np)`` when ``None``, ensuring NumPy arrays
         are used in LOWESS regardless of backend.
-    optimizer : str
-        Solver passed to ``scipy.optimize.minimize``, default ``"L-BFGS-B"``.
-    optimizer_options : dict or None
-        Options forwarded to ``scipy.optimize.minimize``.
-        Defaults to ``{"maxiter": 20000, "ftol": 1e-12, "gtol": 1e-10}``.
-    backend : {"numpy", "jax"}
-        Backend for the trend fit. ``"jax"`` enables autodiff and JIT
-        compilation; ``"numpy"`` uses analytic Jacobians when available.
+    weights : np.ndarray or None
+        Per-point weights, shape ``(N,)``, used to warm-start the OLS
+        pre-pass of the trend fit (passed to :func:`nonlinear_fit`).
+        Typically ``res.weights`` from a previous call. ``None`` → uniform
+        weights. The fluctuation fit always uses the weights produced by
+        the trend fit, not this argument.
+    fixed_sigma : float or None
+        Fixed robust scale estimate. When provided, replaces the per-iteration
+        MAD estimate in the IRLS loop. Useful when the scale is known in
+        advance or inherited from a previous fit.
+    maxiter : int
+        Maximum IRLS iterations for both the trend and fluctuation fits.
+    tol : float
+        Convergence tolerance for both IRLS loops.
     mode : {"ratio", "subtract"}
         How to detrend before estimating fluctuations. ``"ratio"`` divides
         ``trace`` by the trend (multiplicative); ``"subtract"`` removes it
@@ -896,13 +952,17 @@ def fit_baseline(
         :func:`fit_baseline_fluctuations`.
     method : {"lowess", "percentile"}
         Fluctuation estimation method.
-    maxiter : int
-        Maximum IRLS iterations for both the trend and fluctuation fits.
-    tol : float
-        Convergence tolerance for both IRLS loops.
     percentile : float or None
         *Percentile method only.* Percentile to track (0–100). Auto-estimated
         from ``res.weights`` when ``None``.
+    optimizer : str
+        Solver passed to ``scipy.optimize.minimize``, default ``"L-BFGS-B"``.
+    optimizer_options : dict or None
+        Options forwarded to ``scipy.optimize.minimize``.
+        Defaults to ``{"maxiter": 20000, "ftol": 1e-12, "gtol": 1e-10}``.
+    backend : {"numpy", "jax"}
+        Backend for the trend fit. ``"jax"`` enables autodiff and JIT
+        compilation; ``"numpy"`` uses analytic Jacobians when available.
     dtype : jax dtype
         Floating-point precision for the JAX backend, default
         ``jnp.float64``. Requires ``jax_enable_x64=True``.
@@ -928,12 +988,14 @@ def fit_baseline(
         trace,
         t,
         model,
-        init_params,
+        x0,
         bounds,
         M,
-        optimizer,
+        weights,
+        fixed_sigma,
         maxiter,
         tol,
+        optimizer,
         optimizer_options=optimizer_options,
         backend=backend,
         dtype=dtype,
@@ -945,9 +1007,10 @@ def fit_baseline(
         F0trend,
         mode,
         frac,
-        weights,
         method,
         M_fluctuations,
+        weights,
+        fixed_sigma,
         maxiter,
         tol,
         percentile,
