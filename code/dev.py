@@ -4,8 +4,10 @@ from typing import Callable, Literal
 
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
 from aind_ophys_utils.signal_utils import percentile_filter
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 from scipy.optimize import OptimizeResult, minimize
 from statsmodels.nonparametric._smoothers_lowess import lowess as _sm_lowess
 from statsmodels.robust import scale
@@ -811,9 +813,13 @@ def fit_baseline_fluctuations(
         For ``"percentile"``, used to estimate the baseline percentile when
         ``percentile=None``.
     fixed_sigma : float or None
-        Fixed robust scale estimate. When provided, replaces the per-iteration
-        MAD estimate in the IRLS loop. Useful when the scale is known in
-        advance or inherited from a previous fit.
+        Fixed robust scale estimate, **in absolute fluorescence units**.
+        When provided, replaces the per-iteration MAD estimate in the IRLS
+        loop. When ``mode="ratio"``, it is rescaled internally by
+        ``np.nanmedian(trend)`` before being passed to the smoother, so the
+        caller always supplies it in the original signal space. Useful when
+        the scale is known in advance or inherited from a previous fit (e.g.
+        ``res.sigma`` from :func:`nonlinear_fit`).
     maxiter : int
         *LOWESS only.* Maximum number of IRLS outer iterations.
         Ignored when ``M=None`` or ``method="percentile"``.
@@ -840,18 +846,25 @@ def fit_baseline_fluctuations(
         Diagnostics from the fluctuation fit.
         ``{"lowess_weights": w, "lowess_sigma": sigma}`` when ``method="lowess"``;
         ``{"percentile": p, "size": s}`` when ``method="percentile"``.
+        ``lowess_sigma`` is in the detrended signal space: dimensionless
+        (relative to ``trend``) when ``mode="ratio"``, absolute fluorescence
+        units when ``mode="subtract"`` or ``trend=None``.
     """
     # detrend — shared
+    _sigma = fixed_sigma
     if trend is None:
         y = trace.astype(np.float64)
     elif mode == "ratio":
         y = (trace / np.where(trend != 0, trend, np.nan)).astype(np.float64)
+        _sigma = fixed_sigma / np.nanmedian(trend) if fixed_sigma is not None else None
     else:
         y = (trace - trend).astype(np.float64)
 
     # dispatch — method-specific, receives y, returns fluctuation
     if method == "lowess":
-        fluctuation, w, sigma = robust_lowess(y, t, frac, M, weights, fixed_sigma, maxiter, tol)
+        fluctuation, w, sigma = robust_lowess(
+            y, t, frac, M, weights, _sigma, maxiter, tol
+        )
         info = {"lowess_weights": w, "lowess_sigma": sigma}
     elif method == "percentile":
         size = max(1, round(frac * len(trace)))
@@ -936,9 +949,11 @@ def fit_baseline(
         weights. The fluctuation fit always uses the weights produced by
         the trend fit, not this argument.
     fixed_sigma : float or None
-        Fixed robust scale estimate. When provided, replaces the per-iteration
-        MAD estimate in the IRLS loop. Useful when the scale is known in
-        advance or inherited from a previous fit.
+        Fixed robust scale estimate, in absolute fluorescence units.
+        Passed to both the trend fit (:func:`nonlinear_fit`) and the
+        fluctuation fit (:func:`fit_baseline_fluctuations`). When provided,
+        replaces the per-iteration MAD estimate in each IRLS loop. Typically
+        ``res.sigma`` from a previous call.
     maxiter : int
         Maximum IRLS iterations for both the trend and fluctuation fits.
     tol : float
@@ -981,6 +996,9 @@ def fit_baseline(
         Diagnostics from the fluctuation fit.
         ``{"lowess_weights": w, "lowess_sigma": sigma}`` when ``method="lowess"``;
         ``{"percentile": p, "size": s}`` when ``method="percentile"``.
+        ``lowess_sigma`` is in the detrended signal space: dimensionless
+        (relative to ``F0trend``) when ``mode="ratio"``, absolute fluorescence
+        units when ``mode="subtract"``.
     """
     if M_fluctuations is None:
         M_fluctuations = M.with_xp(np) if M is not None else None
@@ -1016,3 +1034,105 @@ def fit_baseline(
         percentile,
     )
     return F0, F0trend, res, info
+
+
+# -----------------------------
+#  Plotting Functions
+# -----------------------------
+def plot_dff(F, F0, F0trend, t=None, zoom_duration=60.0, roi_id=None):
+    if t is None:
+        t = np.arange(len(F))
+    show_insets = zoom_duration is not None and zoom_duration > 0
+    if show_insets:
+        fig, ax = plt.subplots(6, 1, figsize=(15, 7), sharex=True)
+    else:
+        fig, ax = plt.subplots(4, 1, figsize=(15, 5), sharex=True)
+    ax[0].plot(t, F, label="$F$")
+    ax[0].plot(t, F0trend, label="$F0_{trend}$")
+    ax[0].plot(t, F0, label="$F0$")
+    ax[0].set_ylabel("$F$ [a.u.]")
+    ax[1].plot(t, F - F0trend, c="C1", label="$F-F0_{trend}$")
+    ax[1].axhline(0, ls="--", c="k")
+    ax[1].plot(t, F0 - F0trend, c="C2", label="$F0_{fluctuations}$")
+    ax[1].set_ylabel("$\\Delta F$ [a.u.]")
+    ax[2 + show_insets].plot(
+        t,
+        100 * (F / F0trend - 1),
+        c="C1",
+        label="$\\frac{\\Delta F_{trend}}{F0_{trend}}$",
+    )
+    ax[2 + show_insets].axhline(0, ls="--", c="k")
+    ax[2 + show_insets].set_ylabel(r"$\Delta$F/F [%]", y=1 if show_insets else 0.5)
+    ax[3 + 2 * show_insets].plot(
+        t, 100 * (F / F0 - 1), c="C2", label="$\\frac{\\Delta F}{F}$"
+    )
+    ax[3 + 2 * show_insets].axhline(0, ls="--", c="k")
+    ax[3 + 2 * show_insets].set_ylabel(r"$\Delta$F/F [%]", y=1 if show_insets else 0.5)
+    for i in (0, 1, 3, 5) if show_insets else range(4):
+        ax[i].legend(loc=1)
+
+    # Add insets if requested
+    if show_insets:
+        t_total = t[-1] - t[0]
+        zoom_windows = [
+            (t[0], t[0] + zoom_duration),
+            (
+                t[0] + (t_total - zoom_duration) / 2,
+                t[0] + (t_total + zoom_duration) / 2,
+            ),
+            (max(t[-1] - zoom_duration, t[0]), t[-1]),
+        ]
+
+        for i, dff_trace in enumerate((F / F0trend - 1, F / F0 - 1)):
+            ax[2 + 2 * i].axis("off")
+
+            for j, (start_time, end_time) in enumerate(zoom_windows):
+                inset_ax = inset_axes(
+                    ax[2 + 2 * i],
+                    width="100%",
+                    height="100%",
+                    loc="center",
+                    bbox_to_anchor=([0.01, 0.34, 0.67][j], 0.0, 0.32, 0.8),
+                    bbox_transform=ax[2 + 2 * i].transAxes,
+                )
+
+                mask = (t >= start_time) & (t <= end_time)
+                if np.any(mask):
+                    t_zoom, dff_zoom = t[mask], dff_trace[mask] * 100
+
+                    inset_ax.plot(t_zoom, dff_zoom, c=f"C{1+i}", lw=0.5)
+                    inset_ax.axhline(0, c="k", ls="--")
+                    inset_ax.grid(True, alpha=0.8)
+                    inset_ax.set_xlim(start_time, end_time)
+
+                    if len(dff_zoom) > 0:
+                        mi, ma = np.nanmin(dff_zoom), np.nanmax(dff_zoom)
+                        y_margin = 0.1 * (ma - mi)
+                        if ~np.isnan(y_margin):
+                            inset_ax.set_ylim(mi - y_margin, ma + y_margin)
+
+                    inset_ax.set_title(
+                        f"{['First', 'Middle', 'Last'][j]} {zoom_duration:.0f}s",
+                        fontsize=10,
+                        y=0.94,
+                    )
+                    inset_ax.set_xticks([])
+                    inset_ax.set_yticks([])
+
+                    mark_inset(
+                        ax[3 + 2 * i],
+                        inset_ax,
+                        loc1=1,
+                        loc2=3,
+                        fc="none",
+                        ec="#333333",
+                        alpha=0.8,
+                        linestyle="--",
+                        linewidth=1,
+                    )
+
+    ax[-1].set_xlim(-0.01 * t[-1], 1.01 * t[-1])
+    ax[-1].set_xlabel("Time [frames]" if t[1] == 1 else "Time [s]")
+    if roi_id is not None:
+        ax[0].set_title(f"cell_roi_id: {int(roi_id)}")
+    plt.subplots_adjust(hspace=0.1, top=0.935, bottom=0.13, left=0.06, right=0.995)
