@@ -1,8 +1,6 @@
 metadata_version: 1
-name: Copy of aind-ophys-dff to look at Jinho's data
-description: This capsule calculates ΔF/F using the dff function from aind-ophys-utils
+name: dff baseline dev - Claude Code
+description: Dev capsule to fix problems in dff calculation in inhibitory neurons
 authors:
-- name: AIND
 - name: Johannes Friedrich
-- name: Marina Garrett
-- name: Arielle Leon
+- name: Jinho Kim
