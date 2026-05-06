@@ -9,6 +9,10 @@ cd /comb && git checkout for_gcamp_validation
 cd /
 git clone https://github.com/AllenNeuralDynamics/lamf-analysis
 cd /lamf-analysis && pip install -e .
+#cd /
+#git clone https://github.com/AllenNeuralDynamics/single-cell-zdrift-qc
+#cd /single-cell-zdrift-qc && pip install -e .
+
 
 echo "Writing VS Code profile settings for stable kernel detection..."
 mkdir -p /root/capsule/scratch/.vscode-root/User

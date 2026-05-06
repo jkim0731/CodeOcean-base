@@ -30,4 +30,4 @@
 - Look for ambiguity in prompts and data. If it cannot be resolved, always ask for clarification.
 - Focus on visual communication with the user. Use jupyter notebook, images, and plots. Consider step by step explanation.
 - Use existing tools whenever possible (mostly in /root/capsule/code and /lamf-analysis).
-
+- Divide each session and log at /code/claude-sessions/ with incremental numbering system and title.

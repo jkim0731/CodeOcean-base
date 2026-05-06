@@ -1,0 +1,136 @@
+"""Data loading for the baseline-fitting QC app.
+
+Each session directory under PARENT_DIR is named like ``<subject>_<YYYY-MM-DD>``
+and contains the per-session arrays produced by
+``long_vs_short_baselin_window.ipynb``. ROI metadata (plane_id, cell_roi_id) is
+in ``sczdrift_df_all.csv`` and rows are aligned with the ROI axis of every
+``*_all*.npy`` array.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+PARENT_DIR = Path("/root/capsule/scratch/first_try")
+DATA_DIR = Path("/root/capsule/data")
+
+ARRAY_FILES = (
+    "F_all_array",
+    "F0_all",
+    "F0trend_all",
+    "baseline_short_window_all_array",
+    "baseline_long_window_all_array",
+    "dff_short_window_all_array",
+    "dff_long_window_all_array",
+)
+METRIC_FILES = (
+    "F_noise",
+    "F_signal",
+    "F_snr",
+    "F_skewness",
+    "bleaching_metric",
+    "sustained_metric",
+)
+METRIC_DISPLAY = {
+    "F_noise": "noise",
+    "F_snr": "snr",
+    "bleaching_metric": "bleaching",
+    "sustained_metric": "sustained",
+    "F_skewness": "skewness",
+}
+
+
+@dataclass
+class SessionData:
+    session_key: str
+    path: Path
+    timestamps: np.ndarray              # (T,)
+    F: np.ndarray                       # (N, T)
+    baselines: dict                     # name -> (N, T)
+    dffs: dict                          # name -> (N, T)
+    metrics: pd.DataFrame               # rows align with ROI axis
+    rois: pd.DataFrame                  # plane_id, cell_roi_id, ...
+
+    @property
+    def n_rois(self) -> int:
+        return self.F.shape[0]
+
+
+def list_sessions(parent_dir: Path = PARENT_DIR) -> list[Path]:
+    return sorted(p for p in parent_dir.iterdir() if p.is_dir())
+
+
+@lru_cache(maxsize=8)
+def load_session(session_path_str: str) -> SessionData:
+    session_path = Path(session_path_str)
+    rois = pd.read_csv(session_path / "sczdrift_df_all.csv")
+
+    F = np.load(session_path / "F_all_array.npy", mmap_mode="r")
+    timestamps = np.load(session_path / "timestamps.npy")
+
+    baselines = {
+        "short": np.load(session_path / "baseline_short_window_all_array.npy", mmap_mode="r"),
+        "long": np.load(session_path / "baseline_long_window_all_array.npy", mmap_mode="r"),
+        "F0trend": np.load(session_path / "F0trend_all.npy", mmap_mode="r"),
+        "F0": np.load(session_path / "F0_all.npy", mmap_mode="r"),
+    }
+    dffs = {
+        "short": np.load(session_path / "dff_short_window_all_array.npy", mmap_mode="r"),
+        "long": np.load(session_path / "dff_long_window_all_array.npy", mmap_mode="r"),
+    }
+    metrics = pd.DataFrame({
+        display_name: np.load(session_path / f"{key}.npy")
+        for key, display_name in METRIC_DISPLAY.items()
+    })
+
+    return SessionData(
+        session_key=session_path.name,
+        path=session_path,
+        timestamps=timestamps,
+        F=F,
+        baselines=baselines,
+        dffs=dffs,
+        metrics=metrics,
+        rois=rois,
+    )
+
+
+@lru_cache(maxsize=1)
+def aggregate_metrics(parent_dir_str: str = str(PARENT_DIR)) -> pd.DataFrame:
+    """Stack metric tables across all sessions for distribution plots."""
+    parent_dir = Path(parent_dir_str)
+    frames = []
+    for sess in list_sessions(parent_dir):
+        try:
+            df = pd.DataFrame({
+                display_name: np.load(sess / f"{key}.npy")
+                for key, display_name in METRIC_DISPLAY.items()
+            })
+        except FileNotFoundError:
+            continue
+        df["session_key"] = sess.name
+        df["roi_index"] = np.arange(len(df))
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame(columns=list(METRIC_DISPLAY.values()) + ["session_key", "roi_index"])
+    return pd.concat(frames, ignore_index=True)
+
+
+_SUBJECT_DATE_RE = re.compile(r"^(?P<subject>\d+)_(?P<date>\d{4}-\d{2}-\d{2})$")
+
+
+@lru_cache(maxsize=64)
+def find_processed_dir(session_key: str, data_dir_str: str = str(DATA_DIR)) -> Path | None:
+    """Map a session_key like ``755252_2024-11-12`` to its processed asset dir."""
+    m = _SUBJECT_DATE_RE.match(session_key)
+    if not m:
+        return None
+    pattern = f"multiplane-ophys_{m['subject']}_{m['date']}_*_processed_*"
+    matches = sorted(Path(data_dir_str).glob(pattern))
+    return matches[-1] if matches else None
