@@ -1,0 +1,218 @@
+"""Compare-mode panel: persistent embedded version of the run picker.
+
+Reads ``<runs_dir>/index.csv``, lets the user filter rows with a
+pandas ``.query`` expression over the flattened recipe columns, and assign
+rows to slots 1–4 (matching keys 1–4 in the main window). Each slot
+independently picks ``F0trend`` or ``F0``.
+
+Unlike a modal dialog, this widget emits ``selectionsChanged`` whenever a slot
+is assigned, cleared, or reset — the main window applies the change to the
+trace plot immediately.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+import pandas as pd
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QStandardItem, QStandardItemModel
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QComboBox, QGridLayout, QGroupBox, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QTableView,
+    QVBoxLayout, QWidget,
+)
+
+from .runs import discover_runs
+
+SLOT_KEYS    = ("short", "long", "F0trend", "F0")
+KIND_OPTIONS = ("F0trend", "F0")
+
+
+class CompareRunsPanel(QWidget):
+    """Embedded compare-mode panel.
+
+    Signals
+    -------
+    selectionsChanged(dict)
+        Emitted whenever the slot assignments change. The payload is
+        ``{slot_key: (run_dir: Path, kind: str, label: str)}``; slots not
+        assigned are absent (caller falls back to legacy for those).
+    """
+
+    selectionsChanged = pyqtSignal(dict)
+
+    def __init__(self, runs_dir: Path, current: Optional[dict] = None, parent=None):
+        super().__init__(parent)
+        self._runs_dir = Path(runs_dir)
+        self._df = discover_runs(self._runs_dir)
+        # slot_key -> (run_dir, kind, label)
+        self._selections: dict[str, tuple[Path, str, str]] = dict(current or {})
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(4, 4, 4, 4)
+        root.setSpacing(4)
+
+        # ── header / filter ──────────────────────────────────────────────────
+        header = QLabel(
+            f"Runs index: <code>{self._runs_dir / 'index.csv'}</code> "
+            f"&nbsp;•&nbsp; {len(self._df)} run(s) discovered. "
+            "Slot assignments apply immediately."
+        )
+        header.setTextFormat(Qt.RichText)
+        header.setWordWrap(True)
+        root.addWidget(header)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter:"))
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText(
+            "pandas .query expr — e.g. recipe_sigma_method == 'mad' and recipe_M_c_pos == 2"
+        )
+        self.filter_edit.returnPressed.connect(self._apply_filter)
+        filter_row.addWidget(self.filter_edit)
+        clear_btn = QPushButton("Clear filter")
+        clear_btn.clicked.connect(lambda: (self.filter_edit.clear(), self._apply_filter()))
+        filter_row.addWidget(clear_btn)
+        reset_btn = QPushButton("Reset all slots → legacy")
+        reset_btn.setToolTip("Clear every slot override and fall back to short/long/F0trend/F0 from parent_dir.")
+        reset_btn.clicked.connect(self._reset_all)
+        filter_row.addWidget(reset_btn)
+        root.addLayout(filter_row)
+
+        # ── runs table ───────────────────────────────────────────────────────
+        self.table = QTableView()
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table.setMinimumHeight(180)
+        root.addWidget(self.table, stretch=1)
+
+        # ── slot assignment grid ─────────────────────────────────────────────
+        slot_box = QGroupBox("Slot assignments — match keys 1–4 in the main window")
+        grid = QGridLayout(slot_box)
+        grid.setVerticalSpacing(3)
+        self._slot_widgets: dict[str, dict] = {}
+        for col, key in enumerate(SLOT_KEYS):
+            grid.addWidget(QLabel(f"<b>{col + 1}: {key}</b>"), 0, col, Qt.AlignCenter)
+
+            kind_combo = QComboBox()
+            kind_combo.addItems(KIND_OPTIONS)
+            grid.addWidget(kind_combo, 1, col)
+
+            assign_btn = QPushButton("Assign selected row →")
+            grid.addWidget(assign_btn, 2, col)
+
+            clear_btn_slot = QPushButton("Clear (legacy)")
+            grid.addWidget(clear_btn_slot, 3, col)
+
+            label_lbl = QLabel("(legacy)")
+            label_lbl.setWordWrap(True)
+            label_lbl.setStyleSheet("color: #555; font-size: 9pt;")
+            grid.addWidget(label_lbl, 4, col, Qt.AlignTop)
+
+            assign_btn.clicked.connect(lambda _, k=key: self._assign_to(k))
+            clear_btn_slot.clicked.connect(lambda _, k=key: self._clear_slot(k))
+
+            self._slot_widgets[key] = {
+                "kind_combo": kind_combo,
+                "label_lbl":  label_lbl,
+            }
+        root.addWidget(slot_box)
+
+        self._populate_table(self._df)
+        self._refresh_slot_labels()
+
+    # ── data wiring ──────────────────────────────────────────────────────────
+
+    def _populate_table(self, df: pd.DataFrame) -> None:
+        model = QStandardItemModel(len(df), len(df.columns))
+        model.setHorizontalHeaderLabels(list(df.columns))
+        for r, (_, row) in enumerate(df.iterrows()):
+            for c, col in enumerate(df.columns):
+                val = row[col]
+                item = QStandardItem("" if pd.isna(val) else str(val))
+                model.setItem(r, c, item)
+        self.table.setModel(model)
+        for c, col in enumerate(df.columns):
+            self.table.setColumnWidth(c, 90 if col.startswith("recipe_") else 140)
+        self._displayed_df = df
+
+    def _apply_filter(self) -> None:
+        expr = self.filter_edit.text().strip()
+        if not expr:
+            self._populate_table(self._df)
+            return
+        try:
+            filtered = self._df.query(expr)
+        except Exception as exc:
+            QMessageBox.warning(self, "Filter error", str(exc))
+            return
+        self._populate_table(filtered)
+
+    # ── slot mutations ───────────────────────────────────────────────────────
+
+    def _selected_row(self) -> Optional[pd.Series]:
+        sel = self.table.selectionModel().selectedRows()
+        if not sel:
+            QMessageBox.information(
+                self, "No row selected", "Click a row in the table first."
+            )
+            return None
+        idx = sel[0].row()
+        if idx >= len(self._displayed_df):
+            return None
+        return self._displayed_df.iloc[idx]
+
+    def _assign_to(self, slot_key: str) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        run_dir = Path(str(row["run_dir"]))
+        slug    = str(row.get("slug", row.get("run_id", "?")))
+        run_id  = str(row.get("run_id", "?"))
+        kind    = self._slot_widgets[slot_key]["kind_combo"].currentText()
+        label   = f"{run_id} {slug} · {kind}"
+        self._selections[slot_key] = (run_dir, kind, label)
+        self._refresh_slot_labels()
+        self.selectionsChanged.emit(dict(self._selections))
+
+    def _clear_slot(self, slot_key: str) -> None:
+        if slot_key not in self._selections:
+            return
+        self._selections.pop(slot_key, None)
+        self._refresh_slot_labels()
+        self.selectionsChanged.emit(dict(self._selections))
+
+    def _reset_all(self) -> None:
+        if not self._selections:
+            return
+        self._selections.clear()
+        self._refresh_slot_labels()
+        self.selectionsChanged.emit(dict(self._selections))
+
+    def _refresh_slot_labels(self) -> None:
+        for key, w in self._slot_widgets.items():
+            sel = self._selections.get(key)
+            if sel is None:
+                w["label_lbl"].setText("(legacy)")
+                w["label_lbl"].setStyleSheet("color: #555; font-size: 9pt;")
+            else:
+                _, _, label = sel
+                w["label_lbl"].setText(label)
+                w["label_lbl"].setStyleSheet(
+                    "color: #c5410d; font-size: 9pt; font-weight: bold;"
+                )
+
+    # ── public API ───────────────────────────────────────────────────────────
+
+    def selections(self) -> dict[str, tuple[Path, str, str]]:
+        return dict(self._selections)
+
+    def set_selections(self, sel: dict[str, tuple[Path, str, str]]) -> None:
+        """Programmatic replace (no signal emitted)."""
+        self._selections = dict(sel)
+        self._refresh_slot_labels()

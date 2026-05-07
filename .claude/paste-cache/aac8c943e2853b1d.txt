@@ -1,0 +1,91 @@
+---------------------------------------------------------------------------
+TracerArrayConversionError                Traceback (most recent call last)
+Cell In[5], line 7
+      5 # ── OLS pre-pass ──────────────────────────────────────────────────────────────
+      6 fun, jac = _make_optimizer_fns(ols_val_grad)
+----> 7 res_ols  = minimize(fun, x0, bounds=bounds, method='L-BFGS-B', jac=jac)
+      8 x        = jnp.asarray(res_ols.x, dtype=dtype)
+     10 F0t_ols, resid_ols, u_ols, w_ols, inlier_ols = _get_weights_and_inlier_frac(x, fixed_sigma)
+
+File /opt/conda/lib/python3.11/site-packages/scipy/optimize/_minimize.py:784, in minimize(fun, x0, args, method, jac, hess, hessp, bounds, constraints, tol, callback, options)
+    781     res = _minimize_newtoncg(fun, x0, args, jac, hess, hessp, callback,
+    782                              **options)
+    783 elif meth == 'l-bfgs-b':
+--> 784     res = _minimize_lbfgsb(fun, x0, args, jac, bounds,
+    785                            callback=callback, **options)
+    786 elif meth == 'tnc':
+    787     res = _minimize_tnc(fun, x0, args, jac, bounds, callback=callback,
+    788                         **options)
+
+File /opt/conda/lib/python3.11/site-packages/scipy/optimize/_lbfgsb_py.py:413, in _minimize_lbfgsb(fun, x0, args, jac, bounds, disp, maxcor, ftol, gtol, eps, maxfun, maxiter, iprint, callback, maxls, finite_diff_rel_step, workers, **unknown_options)
+    410     x0 = np.clip(x0, bounds[0], bounds[1])
+    412 # _prepare_scalar_function can use bounds=None to represent no bounds
+--> 413 sf = _prepare_scalar_function(fun, x0, jac=jac, args=args, epsilon=eps,
+    414                               bounds=bounds,
+    415                               finite_diff_rel_step=finite_diff_rel_step,
+    416                               workers=workers)
+    418 func_and_grad = sf.fun_and_grad
+    420 nbd = zeros(n, np.int32)
+
+File /opt/conda/lib/python3.11/site-packages/scipy/optimize/_optimize.py:310, in _prepare_scalar_function(fun, x0, jac, args, bounds, epsilon, finite_diff_rel_step, hess, workers)
+    306 workers = workers or map
+    308 # ScalarFunction caches. Reuse of fun(x) during grad
+    309 # calculation reduces overall function evaluations.
+--> 310 sf = ScalarFunction(fun, x0, args, grad, hess,
+    311                     finite_diff_rel_step, bounds, epsilon=epsilon,
+    312                     workers=workers)
+    314 return sf
+
+File /opt/conda/lib/python3.11/site-packages/scipy/optimize/_differentiable_functions.py:283, in ScalarFunction.__init__(self, fun, x0, args, grad, hess, finite_diff_rel_step, finite_diff_bounds, epsilon, workers)
+    281 # Initial function evaluation
+    282 self._nfev = 0
+--> 283 self._update_fun()
+    285 # Initial gradient evaluation
+    286 self._wrapped_grad = _ScalarGradWrapper(
+    287     grad,
+    288     fun=self._wrapped_fun,
+    289     args=args,
+    290     finite_diff_options=finite_diff_options,
+    291 )
+
+File /opt/conda/lib/python3.11/site-packages/scipy/optimize/_differentiable_functions.py:362, in ScalarFunction._update_fun(self)
+    360 def _update_fun(self):
+    361     if not self.f_updated:
+--> 362         fx = self._wrapped_fun(self.x)
+    363         self._nfev += 1
+    364         if fx < self._lowest_f:
+
+File /opt/conda/lib/python3.11/site-packages/scipy/_lib/_util.py:603, in _ScalarFunctionWrapper.__call__(self, x)
+    600 def __call__(self, x):
+    601     # Send a copy because the user may overwrite it.
+    602     # The user of this class might want `x` to remain unchanged.
+--> 603     fx = self.f(np.copy(x), *self.args)
+    604     self.nfev += 1
+    606     # Make sure the function returns a true scalar
+
+Cell In[4], line 18
+     17 def fun(theta):
+---> 18     val, grad = val_grad_fn(jnp.asarray(theta, dtype=dtype), *extra_args)
+     19     cache['g'] = np.array(grad)
+     20     return float(val)
+
+    [... skipping hidden 13 frame]
+
+Cell In[4], line 4
+      3 def _ols_loss(theta):
+----> 4     r = y_ - model(theta, t_)
+      5     return jnp.sum(r ** 2)
+
+Cell In[3], line 5
+      3 def model(params, t, xp=np):
+      4     b_inf, b_slow, b_fast, b_bright, t_slow, t_fast, t_bright = params
+----> 5     E_slow   = xp.exp(-t / t_slow)
+      6     E_fast   = xp.exp(-t / t_fast)
+      7     E_bright = xp.exp(-t / t_bright)
+
+File /opt/conda/lib/python3.11/site-packages/jax/_src/core.py:931, in Tracer.__array__(self, *args, **kw)
+    930 def __array__(self, *args, **kw):
+--> 931   raise TracerArrayConversionError(self)
+
+TracerArrayConversionError: The numpy.ndarray conversion method __array__() was called on traced array with shape float32[34532]
+See https://docs.jax.dev/en/latest/errors.html#jax.errors.TracerArrayConversionError
