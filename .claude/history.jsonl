@@ -82,3 +82,6 @@
 {"display":"what does index.csv do? when is it saved?","pastedContents":{},"timestamp":1778178952262,"project":"/root/capsule","sessionId":"f2b8ba44-1a76-46fe-ad80-8d81c2bba375"}
 {"display":"How it's being run is tightly associated with the GUI. Add the codes to run the fitting into the same folder as GUI (/dff_baseline_search_app","pastedContents":{},"timestamp":1778179278126,"project":"/root/capsule","sessionId":"f2b8ba44-1a76-46fe-ad80-8d81c2bba375"}
 {"display":"do not move, copy","pastedContents":{},"timestamp":1778179405580,"project":"/root/capsule","sessionId":"f2b8ba44-1a76-46fe-ad80-8d81c2bba375"}
+{"display":"do you have access to /dff_baseline_search_qc_app?","pastedContents":{},"timestamp":1778180829429,"project":"/root/capsule/code/dff_baseline_search_app","sessionId":"689cae19-983c-4a42-9713-0ce22d762db1"}
+{"display":"it's ~/dff_baseline_search_qc_app","pastedContents":{},"timestamp":1778180867489,"project":"/root/capsule/code/dff_baseline_search_app","sessionId":"689cae19-983c-4a42-9713-0ce22d762db1"}
+{"display":"do you have access to ~/lamf-analysis?","pastedContents":{},"timestamp":1778180929871,"project":"/root/capsule/code/dff_baseline_search_app","sessionId":"689cae19-983c-4a42-9713-0ce22d762db1"}

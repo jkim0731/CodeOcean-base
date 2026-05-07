@@ -28,8 +28,7 @@
     "voice-mode": 6,
     "feedback-command": 6
   },
-  "promptQueueUseCount": 11,
-  "showExpandedTodos": true,
+  "promptQueueUseCount": 14,
   "cachedGrowthBookFeatures": {
     "tengu_onyx_plover": {
       "enabled": false,
