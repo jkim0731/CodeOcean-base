@@ -2,6 +2,8 @@
 ARG REGISTRY_HOST
 FROM $REGISTRY_HOST/codeocean/ubuntu-desktop-igv-fiji-mambaforge:23.1.0-4-python3.10.12-fiji20231107-1617-firefox120.0-igv2.16.1-guacamole1.5.2-ubuntu22.04
 
+ARG CACHE_BUST=2026-05-12
+
 ARG DEBIAN_FRONTEND=noninteractive
 ARG GIT_ASKPASS
 COPY git-ask-pass /
@@ -24,9 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Bash alias
 RUN echo "alias code='/opt/vscode/bin/code --no-sandbox --user-data-dir=/root/capsule/scratch/.vscode-root'" >> /etc/bash.bashrc
 
-# installing tools for cellpose and napari
-#RUN apt-get install -y --no-install-recommends \
-#    qtbase5-dev qt5-qmake qttools5-dev qttools5-dev-tools qtwebengine5-dev libqt5svg5-dev libqt5websockets5-dev
+# installing tools for cellpose and napari (or other qc apps using pyqt)
+RUN apt-get install -y --no-install-recommends \
+    qtbase5-dev qt5-qmake qttools5-dev qttools5-dev-tools qtwebengine5-dev libqt5svg5-dev libqt5websockets5-dev
 
 # clean apt-get
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -42,7 +44,8 @@ RUN pip install -U --no-cache-dir \
     matplotlib \
     pydantic==2.8.2 \
     pydantic_settings \
-    statsmodels
+    statsmodels \
+    pyqtgraph 
 
 
 # Register Python kernel for Jupyter
