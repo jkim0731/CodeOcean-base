@@ -1,10 +1,10 @@
 {
-  "numStartups": 13,
+  "numStartups": 12,
   "installMethod": "native",
   "autoUpdates": false,
   "tipsHistory": {
     "new-user-warmup": 9,
-    "plan-mode-for-complex-tasks": 13,
+    "plan-mode-for-complex-tasks": 8,
     "terminal-setup": 3,
     "memory-command": 3,
     "theme-command": 3,
@@ -484,9 +484,9 @@
       "hasClaudeMdExternalIncludesApproved": false,
       "hasClaudeMdExternalIncludesWarningShown": false,
       "lastGracefulShutdown": false,
-      "lastHintSessionId": "0d3a6d1e-25cd-455f-a6f2-ff355d74710c",
-      "lastSessionFirstPrompt": "read claude-sessions markdowns. I am settle with using F0trend as the final baseline with binit0 and current bounds condition in dff_baseline_search_qc_app/baseline_search. Look at recipes under binit",
-      "lastSessionModified": 1778732981008,
+      "lastHintSessionId": "689cae19-983c-4a42-9713-0ce22d762db1",
+      "lastSessionFirstPrompt": "do you have access to /dff_baseline_search_qc_app?",
+      "lastSessionModified": 1778180829440,
       "exampleFiles": [
         "Dockerfile",
         "run_capsule.py",
