@@ -2,6 +2,7 @@
   "numStartups": 13,
   "installMethod": "native",
   "autoUpdates": false,
+  "hasSeenTasksHint": true,
   "tipsHistory": {
     "new-user-warmup": 9,
     "plan-mode-for-complex-tasks": 13,
@@ -31,7 +32,7 @@
     "rename-conversation": 11,
     "custom-commands": 11
   },
-  "promptQueueUseCount": 53,
+  "promptQueueUseCount": 71,
   "cachedGrowthBookFeatures": {
     "tengu_bridge_repl_v2": true,
     "tengu_cobalt_raccoon": true,

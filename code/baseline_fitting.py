@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from aind_ophys_utils.signal_utils import percentile_filter
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
-from scipy.optimize import OptimizeResult, minimize
+from scipy.optimize import brentq, OptimizeResult, minimize
 from statsmodels.nonparametric._smoothers_lowess import lowess as _sm_lowess
 from statsmodels.robust import scale
 from statsmodels.robust.norms import RobustNorm
@@ -293,6 +293,7 @@ def nonlinear_fit(
     fixed_sigma: float | None = None,
     maxiter: int = 5,
     tol: float = 1e-3,
+    sigma_relax_threshold: float = 0.05,
     # --- optimizer ---
     optimizer: str = "L-BFGS-B",
     optimizer_options: dict | None = None,
@@ -348,6 +349,11 @@ def nonlinear_fit(
     tol : float
         IRLS convergence tolerance on the relative parameter change
         ``‖x_new − x‖ / (‖x‖ + ε)``.
+    sigma_relax_threshold : float
+        Proportion-of-negative-residuals threshold for detecting a degenerate
+        first attempt. If the converged first attempt has fewer than this
+        fraction of negative residuals, the IRLS is re-run from the OLS
+        starting point with a relaxed sigma. Default ``0.05``.
     optimizer : str
         Solver passed to ``scipy.optimize.minimize``, default ``"L-BFGS-B"``.
     optimizer_options : dict or None
@@ -475,36 +481,63 @@ def nonlinear_fit(
     # ----------------------------
     # IRLS
     # ----------------------------
-    for _ in range(max(1, maxiter) if M is not None else 0):
-        resid = y_ - model(x, t_)
+    # Pre-compute relaxed sigma for a potential second attempt.
+    # Only applicable when sigma is fixed and the M-estimator is tight enough
+    # that a degenerate first attempt is plausible (z_half root exists in [0,2]).
+    _relax_sigma = None
+    if M is not None and fixed_sigma is not None:
+        if float(min(M.weights(2), M.weights(-2))) < 0.5:
+            _z_half = brentq(
+                lambda z: float(min(M.weights(z), M.weights(-z))) - 0.5,
+                0.0, 2.0,
+            )
+            _relax_sigma = fixed_sigma * 2.0 / _z_half
 
-        if fixed_sigma is not None:  # use fixed sigma if provided
-            _sigma = fixed_sigma
-        elif use_jax:
-            _sigma = jnp.median(jnp.abs(resid)) * 1.4826
-            _sigma = jnp.where(_sigma == 0, jnp.std(resid), _sigma)
-        else:
-            _sigma = scale.mad(resid, center=0)
-            if _sigma == 0:
-                _sigma = np.std(resid)
+    x_ols = x  # OLS starting point — reused if first attempt degenerates
 
-        fun_or_pair = make_objective(_sigma)
-        fun, jac_ = fun_or_pair if use_jax else (fun_or_pair, provides_grad)
-        res = minimize(
-            fun,
-            x,
-            bounds=bounds,
-            method=optimizer,
-            jac=jac_,
-            options=optimizer_options,
-        )
+    for attempt in range(2 if _relax_sigma is not None else 1):
+        _sigma_fixed = fixed_sigma if attempt == 0 else _relax_sigma
 
-        x_new = jnp.asarray(res.x, dtype=dtype) if use_jax else res.x
-        norm = jnp.linalg.norm if use_jax else np.linalg.norm
-        if norm(x_new - x) / (norm(x) + 1e-12) < tol:
+        for i in range(max(1, maxiter) if M is not None else 0):
+            resid = y_ - model(x, t_)
+
+            if _sigma_fixed is not None:
+                _sigma = _sigma_fixed
+            elif use_jax:
+                _sigma = jnp.median(jnp.abs(resid)) * 1.4826
+                _sigma = jnp.where(_sigma == 0, jnp.std(resid), _sigma)
+            else:
+                _sigma = scale.mad(resid, center=0)
+                if _sigma == 0:
+                    _sigma = np.std(resid)
+
+            fun_or_pair = make_objective(_sigma)
+            fun, jac_ = fun_or_pair if use_jax else (fun_or_pair, provides_grad)
+            res = minimize(
+                fun,
+                x,
+                bounds=bounds,
+                method=optimizer,
+                jac=jac_,
+                options=optimizer_options,
+            )
+
+            x_new = jnp.asarray(res.x, dtype=dtype) if use_jax else res.x
+            norm = jnp.linalg.norm if use_jax else np.linalg.norm
+            if norm(x_new - x) / (norm(x) + 1e-12) < tol:
+                x = x_new
+                break
             x = x_new
-            break
-        x = x_new
+
+        # After the first full attempt check for degeneracy: fewer than 5% of
+        # residuals negative means the converged fit is degenerate.  Reset to
+        # OLS and re-run with relaxed sigma (second attempt).
+        if attempt == 0 and _relax_sigma is not None:
+            _resid_final = np.asarray(y_ - model(x, t_), dtype=float)
+            if float(np.mean(_resid_final < 0)) < sigma_relax_threshold:
+                x = x_ols
+                continue  # proceed to second attempt
+        break  # first attempt non-degenerate, or second attempt finished
 
     fitted = np.array(model(x, t_))
     if M is not None:
@@ -750,6 +783,7 @@ def fit_baseline(
     fixed_sigma: float | None = None,
     maxiter: int = 5,
     tol: float = 1e-3,
+    sigma_relax_threshold: float = 0.05,
     # --- smoother ---
     mode: Literal["ratio", "subtract"] = "ratio",
     frac: float = 0.1,
@@ -808,6 +842,10 @@ def fit_baseline(
         Maximum IRLS iterations for both the trend and fluctuation fits.
     tol : float
         Convergence tolerance for both IRLS loops.
+    sigma_relax_threshold : float
+        Passed to :func:`nonlinear_fit`. Proportion-of-negative-residuals
+        threshold for triggering a second IRLS attempt with relaxed sigma.
+        Default ``0.05``.
     mode : {"ratio", "subtract"}
         How to detrend before estimating fluctuations. ``"ratio"`` divides
         ``trace`` by the trend (multiplicative); ``"subtract"`` removes it
@@ -863,7 +901,8 @@ def fit_baseline(
         fixed_sigma,
         maxiter,
         tol,
-        optimizer,
+        sigma_relax_threshold=sigma_relax_threshold,
+        optimizer=optimizer,
         optimizer_options=optimizer_options,
         backend=backend,
         dtype=dtype,
