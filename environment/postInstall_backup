@@ -54,22 +54,19 @@ cat > /root/capsule/scratch/.vscode-root/User/settings.json << 'EOF'
 }
 EOF
 
-# # Updating FIJI
-# # Can be commented out if not used
-# echo "Updating Fiji (optional)..."
-# FIJI_DIR=/Fiji.app
-# FIJI="$FIJI_DIR/ImageJ-linux64"
-# if [ -x "$FIJI" ]; then
-#   "$FIJI" --update update
-# fi
+echo "Updating Fiji (optional)..."
+FIJI_DIR=/Fiji.app
+FIJI="$FIJI_DIR/ImageJ-linux64"
+if [ -x "$FIJI" ]; then
+  "$FIJI" --update update
+fi
 
 echo "Installing Claude CLI..."
 
-# Keep Claude data under capsule storage, not main workstation disk.
-# This directory will be owned by claude-user (see FIX #2 below).
+# Keep Claude data under capsule storage, not main workstation disk
 mkdir -p /root/capsule/.claude
 
-# Root shell convenience — append to .bashrc only once
+# Root shell convenience
 if ! grep -q 'CLAUDE_CONFIG_DIR=/root/capsule/.claude' /root/.bashrc 2>/dev/null; then
 cat >> /root/.bashrc <<'EOF'
 
@@ -79,7 +76,6 @@ export PATH="/root/.local/bin:/usr/local/bin:/opt/conda/bin:$PATH"
 EOF
 fi
 
-# Export for the remainder of this script (curl installer needs PATH)
 export CLAUDE_CONFIG_DIR=/root/capsule/.claude
 export PATH="/root/.local/bin:/usr/local/bin:/opt/conda/bin:$PATH"
 
@@ -90,9 +86,8 @@ echo "Claude data dir: /root/capsule/.claude"
 
 echo "Setting up claude-user..."
 
-# FIX #3: catch useradd failures other than "user already exists" (exit 9).
-# Exit code 9 = user already exists, which is fine; anything else is a real error.
-useradd -m claude-user || { code=$?; [ $code -eq 9 ] || exit $code; }
+# Create non-root user for --dangerously-skip-permissions
+useradd -m claude-user 2>/dev/null || true
 
 # Make Claude binary globally accessible
 ln -sf /root/.local/bin/claude /usr/local/bin/claude
@@ -100,9 +95,9 @@ ln -sf /root/.local/bin/claude /usr/local/bin/claude
 # Let claude-user traverse required paths
 chmod o+x /root
 chmod o+rx /root/capsule
-# The rest of the permissions are done by running start.sh ("startcapsule" alias)
 
-# Ensure conda and correct env vars are available in claude-user login shells.
+
+# Ensure conda init is available to claude-user login shells by using .profile
 cat > /home/claude-user/.profile <<'EOF'
 export PATH="/usr/local/bin:/opt/conda/bin:$PATH"
 export CLAUDE_CONFIG_DIR=/root/capsule/.claude
@@ -112,7 +107,7 @@ if [ -r /opt/conda/etc/profile.d/conda.sh ]; then
     . /opt/conda/etc/profile.d/conda.sh
 fi
 
-# Load .bashrc too if present
+# Optionally load .bashrc too
 if [ -f ~/.bashrc ]; then
     . ~/.bashrc
 fi
@@ -127,28 +122,12 @@ echo
 echo "Run Claude with:"
 echo '  su -s /bin/bash - claude-user -c "cd /root/capsule && claude --dangerously-skip-permissions"'
 
-# Helper aliases for root sessions.
-# Use a shell function instead of deeply-escaped alias for claude-skip
-# so DISPLAY/DBUS vars are forwarded cleanly without brittle quote nesting.
-# Note: these only take effect in interactive root shells (sourced .bashrc).
+# Optional helper alias for root sessions
 if ! grep -q "alias claude-skip=" /root/.bashrc 2>/dev/null; then
 cat >> /root/.bashrc <<'EOF'
 alias startcapsule='bash /root/capsule/environment/start.sh'
 
-# Forward display env vars to claude-user's session cleanly via a function.
-# Must be run from an active desktop session (DISPLAY must be set).
-claude-skip() {
-    su -s /bin/bash - claude-user -c \
-        "export DISPLAY='${DISPLAY}'; \
-         export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS}'; \
-         cd /root/capsule && claude --dangerously-skip-permissions"
-}
-
-claude-user-shell() {
-    su -s /bin/bash - claude-user -c \
-        "export DISPLAY='${DISPLAY}'; \
-         export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS}'; \
-         cd /root/capsule && exec bash -i"
-}
+alias claude-skip='su -s /bin/bash - claude-user -c "export DISPLAY='\''$DISPLAY'\''; export DBUS_SESSION_BUS_ADDRESS='\''$DBUS_SESSION_BUS_ADDRESS'\''; cd /root/capsule && claude --dangerously-skip-permissions"'
+alias claude-user-shell='su -s /bin/bash - claude-user -c "export DISPLAY='\''$DISPLAY'\''; export DBUS_SESSION_BUS_ADDRESS='\''$DBUS_SESSION_BUS_ADDRESS'\''; cd /root/capsule && exec bash -i"'
 EOF
 fi

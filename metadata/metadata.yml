@@ -1,6 +1,5 @@
 metadata_version: 1
-name: dff baseline dev - Claude Code
-description: Dev capsule to fix problems in dff calculation in inhibitory neurons
+name: Claude Code - anything
+description: To use CC for quick testing
 authors:
-- name: Johannes Friedrich
 - name: Jinho Kim
