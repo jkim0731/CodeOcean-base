@@ -34,19 +34,21 @@ RUN apt-get install -y --no-install-recommends \
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN pip install -U --no-cache-dir \
+    codeocean==0.14.0 \
+    aind-codeocean-utils \
+    aind-data-access-api \
     aind-ophys-utils \
+    aind_session \
     aind-data-schema==1.2.0 \
     aind-log-utils \
-    aind-qcportal-schema \
-    jax \
     joblib \
     jupyterlab \
     matplotlib \
     pydantic==2.8.2 \
     pydantic_settings \
-    statsmodels \
     pyqtgraph 
-
+#    aind-qcportal-schema \
+#    statsmodels \
 
 # Register Python kernel for Jupyter
 RUN python3 -m ipykernel install --sys-prefix --name python3 --display-name "Python 3"

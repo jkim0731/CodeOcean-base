@@ -1,6 +1,8 @@
 /data/
 /code/dff_baseline_search_qc_app/
 .claude/file-history
+.claude/projects
+.claude/.credentials.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
