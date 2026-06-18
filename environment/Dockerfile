@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm /tmp/vscode.tar.gz \
     && ln -sf /opt/vscode/bin/code /usr/bin/code
 # Bash alias
-RUN echo "alias code='/opt/vscode/bin/code --no-sandbox --user-data-dir=/root/capsule/scratch/.vscode-root'" >> /etc/bash.bashrc
+RUN echo "alias code='/opt/vscode/bin/code --no-sandbox --user-data-dir=/root/capsule/scratch/.vscode-root --password-store=basic'" >> /etc/bash.bashrc
 
 # installing tools for cellpose and napari (or other qc apps using pyqt)
 RUN apt-get install -y --no-install-recommends \
