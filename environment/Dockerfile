@@ -30,6 +30,48 @@ RUN echo "alias code='/opt/vscode/bin/code --no-sandbox --user-data-dir=/root/ca
 RUN apt-get install -y --no-install-recommends \
     qtbase5-dev qt5-qmake qttools5-dev qttools5-dev-tools qtwebengine5-dev libqt5svg5-dev libqt5websockets5-dev
 
+# Updating firefox for interactive login (required for the first time)
+# Alternative is to bypass logon information from previously successful login, but this way is better 
+# (until we have an updated base image with firefox >=125)
+RUN <<'SCRIPT'
+set -eux
+
+# 1) Install the latest Firefox into /opt (image layer; survives the runtime mount)
+rm -rf /opt/firefox
+curl -fSL -o /tmp/firefox.tar.xz "https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US"
+tar -xJf /tmp/firefox.tar.xz -C /opt
+rm -f /tmp/firefox.tar.xz
+
+# 2) Purge the old distro Firefox (reclaims ~200 MB); NO autoremove, so shared libs stay
+OLD_PKG="$(dpkg -S "$(readlink -f /usr/bin/firefox)" 2>/dev/null | cut -d: -f1 || true)"
+[ -n "${OLD_PKG:-}" ] && { apt-get remove -y --purge "$OLD_PKG"; rm -rf /var/lib/apt/lists/*; }
+
+# 3) Point shell + launcher paths at the new binary
+ln -sf /opt/firefox/firefox /usr/local/bin/firefox
+ln -sf /opt/firefox/firefox /usr/bin/firefox
+
+# 4) Restore the apps-menu entry the purge removed
+cat > /usr/share/applications/firefox.desktop <<'EOF'
+[Desktop Entry]
+Name=Firefox
+Comment=Web Browser
+Exec=/opt/firefox/firefox %u
+Terminal=false
+Type=Application
+Icon=/opt/firefox/browser/chrome/icons/default/default128.png
+Categories=Network;WebBrowser;
+MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true
+StartupWMClass=firefox
+EOF
+update-desktop-database /usr/share/applications 2>/dev/null || true
+
+# 5) Build-time sanity check (fails the build loudly if the binary is broken)
+/opt/firefox/firefox --version
+SCRIPT
+
+ENV BROWSER=/usr/local/bin/firefox
+
 # clean apt-get
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
