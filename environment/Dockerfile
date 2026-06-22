@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
     libxcb-render-util0 libxcb-xinerama0 libxcb-xinput0 \
     libxcb-xfixes0 libxcb-shape0 libxcb-cursor0 \
-    numlockx gthumb \
+    numlockx gthumb vlc \
     && curl -L "https://update.code.visualstudio.com/latest/linux-x64/stable" -o /tmp/vscode.tar.gz \
     && mkdir -p /opt/vscode \
     && tar -xzf /tmp/vscode.tar.gz -C /opt/vscode --strip-components=1 \
