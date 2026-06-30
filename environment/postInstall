@@ -141,14 +141,14 @@ claude-skip() {
     su -s /bin/bash - claude-user -c \
         "export DISPLAY='${DISPLAY}'; \
          export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS}'; \
-         cd /root/capsule && claude --dangerously-skip-permissions"
+         cd /root/capsule/code && claude --dangerously-skip-permissions"
 }
 
 claude-user-shell() {
     su -s /bin/bash - claude-user -c \
         "export DISPLAY='${DISPLAY}'; \
          export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS}'; \
-         cd /root/capsule && exec bash -i"
+         cd /root/capsule/code && exec bash -i"
 }
 EOF
 fi
