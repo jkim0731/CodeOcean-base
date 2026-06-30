@@ -4,21 +4,10 @@ set -e
 echo "[startup] fixing permissions..."
 
 chown -R claude-user:claude-user /root/capsule/.claude
-chmod -R a+wX /scratch
+find /scratch -user root -exec chmod a+wX {} + 2>/dev/null
 chmod -R a+wX /root/capsule/code
 chmod -R a+wX /results
 chmod o+rx /root/capsule/data
-#!/usr/bin/env bash
-set -e
-
-echo "[startup] fixing permissions..."
-
-chown -R claude-user:claude-user /root/capsule/.claude
-chmod -R a+wX /scratch
-chmod -R a+wX /root/capsule/code
-chmod -R a+wX /results
-chmod o+rx /root/capsule/data
-chmod a+wX /
 
 # --- prevent disk fills from crashing/killed jobs ---
 # A crash dumps full process memory to core_pattern (was /tmp/core.<pid>, ~1GB each) and
