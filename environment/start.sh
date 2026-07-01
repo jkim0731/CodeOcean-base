@@ -3,11 +3,18 @@ set -e
 
 echo "[startup] fixing permissions..."
 
-chown -R claude-user:claude-user /root/capsule/.claude
-find /scratch -user root -exec chmod a+wX {} + 2>/dev/null
-chmod -R a+wX /root/capsule/code
-chmod -R a+wX /results
-chmod o+rx /root/capsule/data
+chown -R claude-user:claude-user /root/capsule/.claude || echo "[startup] 
+  WARNING: chown .claude failed"
+su claude-user -c "rm -rfv /scratch/.Trash*" || echo "[startup] WARNING: rm 
+  .Trash failed"
+find /scratch -maxdepth 1 -user root -exec chmod a+rwX {} + 2>/dev/null ||
+  echo "[startup] WARNING: chmod /scratch failed"
+chmod -R a+rwX /root/capsule/code || echo "[startup] WARNING: chmod code 
+  failed"
+chmod -R a+rwX /results || echo "[startup] WARNING: chmod /results failed"
+chmod o+rx /root/capsule/data || echo "[startup] WARNING: chmod /data failed"
+chmod a+rwX / || echo "[startup] WARNING: chmod / failed"
+
 
 # --- prevent disk fills from crashing/killed jobs ---
 # A crash dumps full process memory to core_pattern (was /tmp/core.<pid>, ~1GB each) and
