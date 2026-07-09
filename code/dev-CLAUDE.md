@@ -9,7 +9,7 @@ Do not ask for permission unless the action is destructive or irreversible.
 
 ---
 
-## ð§­ Purpose
+## Purpose
 
 This file defines **how to approach problems and reason effectively**, and captures CodeOcean-specific conventions.
 
@@ -19,7 +19,7 @@ Do not read all documents by default. Identify which are relevant to the current
 
 ---
 
-## ð¦ CodeOcean Conventions
+## CodeOcean Conventions
 
 ### File organization
 
@@ -46,25 +46,31 @@ Always check `/data/claude-data_*` first for historical context.
 
 **Never write to `/tmp` or the root filesystem (`/`).** Both share a 5 GB overlay â filling it locks the environment.
 
-- `/scratch/` is the network scratch volume (8 exabytes, always writable); always use `/scratch/tmp`
-- Enforcement is automatic via `.claude/settings.json`:
-  - `TMPDIR`, `TEMP`, `TMP`, `PIP_CACHE_DIR`, `PIP_TMPDIR` are all set to `/scratch/tmp*` in env
-  - `~/.config/pip/pip.conf` forces pip to `/scratch/tmp` for all cache/build operations
-  - A `PreToolUse` hook auto-prepends `TMPDIR=/scratch/tmp PIP_CACHE_DIR=/scratch/tmp/pip-cache` to bare `pip install` commands
-  - A `SessionStart` hook re-applies pip config and `ulimit -c 0` each session
+`/data` (~10 GB) and `/scratch` (8 EB) are *separate* mounts â not the risk; `/` is.
+**Verify enforcement, don't assume it â this file previously claimed hooks/env that did not exist in `.claude/settings.json`.**
 
-When writing scripts that create temp files:
+- `/scratch/` is the network scratch volume (8 exabytes, always writable); always use `/scratch/tmp`.
+- **Two enforcement layers â confirm each is actually present (`cat .claude/settings.json`; `grep TMPDIR /root/.bashrc`):**
+  1. **Claude's own Bash tool:** the `env` block in `.claude/settings.json` sets `TMPDIR`/`TEMP`/`TMP`/`MPLCONFIGDIR`/`PIP_CACHE_DIR` to `/scratch/tmp*`. Governs only commands *Claude* runs.
+  2. **User-launched processes** (a terminal `python -m ...`, a GUI app): these do **NOT** inherit settings.json. They rely on `/root/.bashrc` exports of the same vars, persisted via `environment/postInstall`. This is the layer that is easy to forget â a rule in settings.json alone does nothing for an app the user starts themselves.
+
+**When you write any standalone script or app, make it self-protecting â don't rely on the env being right.** Redirect its own temp in-code at startup:
 ```python
-TMPDIR = "/scratch/tmp"
-os.makedirs(TMPDIR, exist_ok=True)
+import os, tempfile
+os.environ["TMPDIR"] = os.environ["TEMP"] = os.environ["TMP"] = "/scratch/tmp"
+os.environ.setdefault("MPLCONFIGDIR", "/scratch/tmp/mplconfig")
+tempfile.tempdir = "/scratch/tmp"
+os.makedirs("/scratch/tmp", exist_ok=True)
 ```
+(e.g. `decrosstalk_qc.io.use_scratch_tmp()` does exactly this at import.)
 
-For pip, the hook handles it automatically. If a script calls pip directly:
+**It is not only literal `/tmp` writes.** Holding too much in RAM makes the OS **swap, and swap lands on the `/` overlay** â `/` fills and the environment slows/locks. Bound memory in long-running tools (cache small derived data, not big raw arrays); size parallel workers to available RAM.
+
+For pip directly:
 ```bash
 TMPDIR=/scratch/tmp PIP_CACHE_DIR=/scratch/tmp/pip-cache pip install ...
 ```
-
-To redirect the package install destination (not just cache) away from the root overlay, use `pip install --target /scratch/pip-packages`. Confirm with user before large installs.
+To move the install *destination* (not just cache) off `/`, use `pip install --target /scratch/pip-packages`. Confirm with the user before large installs.
 
 ---
 
@@ -79,7 +85,7 @@ These are tracked here as future infrastructure goals; do not treat them as avai
 
 ---
 
-## â ï¸ Secret Redaction Before Publishing (MANDATORY)
+## Secret Redaction Before Publishing (MANDATORY)
 
 Session transcripts under `.claude/projects/` capture **everything printed to a shell**, including any secret accidentally echoed. Before copying `.claude/` into a results data asset:
 
@@ -100,7 +106,7 @@ The redactor scrubs provider-prefixed tokens (GitHub `ghp_`/`github_pat_`, Huggi
 
 ---
 
-## ð§  Behavior
+## Behavior
 
 - **Always double-check results; triple-check for important analyses.**
 - When something is ambiguous, first consult relevant docs; if uncertainty remains, ask clarifying questions â do not guess.
@@ -111,7 +117,7 @@ The redactor scrubs provider-prefixed tokens (GitHub `ghp_`/`github_pat_`, Huggi
 
 ---
 
-## ð§© Roles (Flexible Reasoning Modes)
+## Roles (Flexible Reasoning Modes)
 
 Move between these roles fluidly as needed. They map to `.claude/agents` (planned).
 
@@ -255,7 +261,7 @@ Each summary should capture:
 
 ---
 
-## ð Workflow (Guideline)
+## Workflow (Guideline)
 
 1. Plan (Scientist)
 2. Reflect and critique
@@ -269,7 +275,7 @@ This flow can be adapted depending on the situation.
 
 ---
 
-## ð¦ Subgoal Definition
+## Subgoal Definition
 
 Each subgoal should clearly define:
 
@@ -282,7 +288,7 @@ Each subgoal should clearly define:
 
 ---
 
-## ð Handoff Concept
+## Handoff Concept
 
 Treat each step as producing a structured summary:
 
@@ -296,7 +302,7 @@ This allows work to continue cleanly across sessions.
 
 ---
 
-## ð Logging
+## Logging
 
 For each meaningful step, record:
 
@@ -310,7 +316,7 @@ Do not rely on implicit memory.
 
 ---
 
-## â ï¸ Anti-Patterns
+## Anti-Patterns
 
 Avoid:
 - skipping localization without justification
@@ -323,7 +329,7 @@ Avoid:
 
 ---
 
-## ð§  Reasoning Style
+## Reasoning Style
 
 - structured and stepwise
 - concise but complete
@@ -332,7 +338,7 @@ Avoid:
 
 ---
 
-## ð Output Style
+## Output Style
 
 When appropriate, structure responses as:
 

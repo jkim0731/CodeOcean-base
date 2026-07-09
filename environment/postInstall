@@ -34,13 +34,30 @@ echo "Installing Claude CLI..."
 # This directory will be owned by claude-user (see FIX #2 below).
 mkdir -p /root/capsule/.claude
 
-# Root shell convenience — append to .bashrc only once
+# Root shell convenience â append to .bashrc only once
 if ! grep -q 'CLAUDE_CONFIG_DIR=/root/capsule/.claude' /root/.bashrc 2>/dev/null; then
 cat >> /root/.bashrc <<'EOF'
 
 # Claude config + logs in capsule storage
 export CLAUDE_CONFIG_DIR=/root/capsule/.claude
 export PATH="/root/.local/bin:/usr/local/bin:/opt/conda/bin:$PATH"
+EOF
+fi
+
+# Keep temp/cache OFF the tiny 5 GB "/" overlay (filling it locks the environment).
+# This applies to ANY process launched from a terminal â e.g. GUI apps the user
+# starts with `python -m ...`, which do NOT inherit Claude Code's settings.json env.
+# (See dev-CLAUDE.md "Temporary files".)
+if ! grep -q 'TMPDIR=/scratch/tmp' /root/.bashrc 2>/dev/null; then
+cat >> /root/.bashrc <<'EOF'
+
+# Redirect temp/cache onto /scratch (8 EB) â never /tmp or / (5 GB overlay)
+export TMPDIR=/scratch/tmp
+export TEMP=/scratch/tmp
+export TMP=/scratch/tmp
+export MPLCONFIGDIR=/scratch/tmp/mplconfig
+export PIP_CACHE_DIR=/scratch/tmp/pip-cache
+mkdir -p /scratch/tmp/mplconfig /scratch/tmp/pip-cache 2>/dev/null
 EOF
 fi
 
