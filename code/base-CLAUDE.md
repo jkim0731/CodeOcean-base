@@ -1,4 +1,4 @@
-# base-CLAUDE.md â interacting with Code Ocean (search Â· attach Â· run Â· capture)
+# base-CLAUDE.md — interacting with Code Ocean (search · attach · run · capture)
 
 Drop this in (or `@`-include it from) a session's `CLAUDE.md` when the task is **Code Ocean data
 orchestration**: finding data assets, attaching them, running a capsule/pipeline via the all-users
@@ -6,14 +6,14 @@ pipeline monitor, and capturing the result as a schema-compliant derived data as
 
 It distills hard-won, working patterns for the AIND Code Ocean deployment
 (`https://codeocean.allenneuraldynamics.org`). Read the **CAUTIONS** section before writing any
-code â several of these cost real debugging time.
+code — several of these cost real debugging time.
 
 ---
 
 ## 0. Environment & auth
 
 - **Token**: `os.getenv("API_SECRET")` (set as a CO secret; the all-users monitor needs it too).
-  **Never print/echo it** â transcripts are published; secrets must be scrubbed (see the global
+  **Never print/echo it** — transcripts are published; secrets must be scrubbed (see the global
   secret-redaction rule). The domain is `https://codeocean.allenneuraldynamics.org/`.
 - **Client** (two equivalent entry points):
   ```python
@@ -24,7 +24,7 @@ code â several of these cost real debugging time.
   co = cou.get_co_client()
   ```
 - **Install** (env): `lamf-analysis` (gives `code_ocean_utils`, `zstack_utils`, `json_utils`),
-  `codeocean==0.14.0`, `aind-codeocean-pipeline-monitor`, and â only if you write schema json â
+  `codeocean==0.14.0`, `aind-codeocean-pipeline-monitor`, and — only if you write schema json —
   `aind-data-schema==1.2.0` (see CAUTIONS). `lamf-analysis` pulls a heavy dep tree (torch/dask/etc.).
 - **Storage**: scratch/temp under `/scratch/tmp`, never `/tmp` or `/` (overlay fills + locks the env).
 
@@ -42,10 +42,10 @@ row = df[df["capsule name"].str.contains("autocoreg", case=False, na=False)]
 # columns: Type, capsule name, Git link, capsule url, capsule id, suffix, result tags,
 #          required data type, pre-attached data asset name/id, Note
 ```
-- **`capsule id`** â use in `RunParams(capsule_id=...)` and as a capsule's `code_url`
-  (`capsule url` = `â¦/capsule/<id>/tree`).
-- **`suffix`** â the capture `process_name_suffix` AND the derived-asset process name. **Match it
-  exactly** â downstream capsules search results *by this suffix*; drift breaks discovery.
+- **`capsule id`** → use in `RunParams(capsule_id=...)` and as a capsule's `code_url`
+  (`capsule url` = `…/capsule/<id>/tree`).
+- **`suffix`** → the capture `process_name_suffix` AND the derived-asset process name. **Match it
+  exactly** — downstream capsules search results *by this suffix*; drift breaks discovery.
 - **`required data type`** tells you what to attach (e.g. `HCR processed (R1); HCR-ROI-label;
   cortical-zstack-registration; cortical-zstack-segmentation`).
 - Sheets: `processing` (the pipeline capsules), `base and regular uses`, `current dev`.
@@ -77,7 +77,7 @@ df     = cou.get_derived_assets_df(sid, "cortical-zstack-registration",   # tidy
 # df cols: derived_asset_id, derived_asset_name, raw_asset_name, session_name,
 #          derived_date, derived_time [, s3_path]
 ```
-- **Provenance / lineage**: `co.data_assets.get_data_asset(aid).provenance.data_assets` â list of
+- **Provenance / lineage**: `co.data_assets.get_data_asset(aid).provenance.data_assets` → list of
   input asset ids that produced `aid`. Walk it to find the raw/processed source of a derived asset.
 - **Pick latest**: sort by `derived_asset_name` (acquisition dt sorts first) or `created`, take the
   last; break ties by `created`.
@@ -88,7 +88,7 @@ df     = cou.get_derived_assets_df(sid, "cortical-zstack-registration",   # tidy
 
 A reproducible capsule **cannot attach assets to itself mid-run**. So a *monitor* capsule builds a
 `PipelineMonitorSettings`, hands it to the **all-users monitor** capsule, which: attaches the assets
-â runs the target capsule â captures `/results` as a derived data asset.
+→ runs the target capsule → captures `/results` as a derived data asset.
 
 ```python
 from aind_codeocean_pipeline_monitor.models import CaptureSettings, PipelineMonitorSettings
@@ -112,7 +112,7 @@ settings = PipelineMonitorSettings(
         process_name_suffix=SUFFIX,                    # -> derived name <input>_<SUFFIX>_<dt>
         tags=["derived", "HCR", SUFFIX, sid],
         custom_metadata={"data level": "derived",
-                         "experiment type": "HCR",     # CONTROLLED VOCAB â see CAUTIONS
+                         "experiment type": "HCR",     # CONTROLLED VOCAB — see CAUTIONS
                          "subject id": sid},
     ),
 )
@@ -127,7 +127,7 @@ comp = co.computations.run_capsule(RunParams(
 `/results/data_description.json`; if `data_level == "derived"` **and** the `name` matches
 `DataRegex.DERIVED`, it uses that name; otherwise it falls back to
 `<input_data_name>_<process_name_suffix>_<dt>`. So either ship a valid derived
-`data_description.json` (see Â§5) or rely on `process_name_suffix`.
+`data_description.json` (see §5) or rely on `process_name_suffix`.
 
 **Always provide a dry-run** (e.g. `--test 1`) that searches + prints the resolved assets but does
 NOT trigger, and validate before a real run.
@@ -136,7 +136,7 @@ NOT trigger, and validate before a real run.
 
 ## 4. Interactive (cloud-workstation) capture
 
-When a result is produced interactively (Ubuntu workstation), `/results` is ephemeral â capture a
+When a result is produced interactively (Ubuntu workstation), `/results` is ephemeral — capture a
 persistent **`/scratch`** folder instead:
 ```python
 from codeocean.data_asset import DataAssetParams, Source, CloudWorkstationSource
@@ -158,14 +158,14 @@ For a derived asset to land in docDB, write both files into the captured folder 
 `lamf_analysis.code_ocean.json_utils.process_json_files(source_asset_name, capture_name,
 start_dt, run_parameters, INPUT_PROCESSING_DICT, process_name=SUFFIX, process_level)`:
 - `source_asset_name` = the **processed source asset base** = `asset.name.split("_processed_")[0]`
-  (HCR/mFISH â `HCR_<sid>_<acq-dt>`; ophys â `multiplane-ophys_<sid>_<acq-dt>`). Must keep the
+  (HCR/mFISH → `HCR_<sid>_<acq-dt>`; ophys → `multiplane-ophys_<sid>_<acq-dt>`). Must keep the
   acquisition datetime (the DERIVED-name regex requires it). `subject_id = source.split("_")[1]`.
 - `capture_name` = `source_asset_name` (the lib appends `_<SUFFIX>_<creation-dt>`).
 - `process_level="subject"` writes only the two files; any other value also copies
   subject/procedures/rig|instrument.json from the source.
 - `INPUT_PROCESSING_DICT = {"name": "Other", "software_version": "...", "code_url": "<capsule url>",
   "notes": "..."}` (`name` must be a valid aind ProcessName; `"Other"` is always safe).
-- Reproducible capsule â writes to `/root/capsule/results`. Interactive â set
+- Reproducible capsule → writes to `/root/capsule/results`. Interactive → set
   `json_utils.RESULTS_PATH = Path(<the /scratch folder being captured>)` first.
 
 ---
@@ -173,7 +173,7 @@ start_dt, run_parameters, INPUT_PROCESSING_DICT, process_name=SUFFIX, process_le
 ## 6. CAUTIONS (read before coding)
 
 1. **`experiment type` is a controlled vocabulary.** `"coregistration"` is **rejected** on capture.
-   Anything HCR/mFISH-related (incl. CZâHCR coregistration) must be `"experiment type": "HCR"`.
+   Anything HCR/mFISH-related (incl. CZ↔HCR coregistration) must be `"experiment type": "HCR"`.
    Anything ophys related (incl. behavior videos) must be `"experiment type": "multiplane-ophys"`.
    `"data level"` is `"derived"`/`"raw data"`. (Free-form `tags` are unconstrained.)
 2. **`_processed_` is a substring trap.** Searching name `HCR_{sid}` + filtering `_processed_` ALSO
@@ -182,16 +182,16 @@ start_dt, run_parameters, INPUT_PROCESSING_DICT, process_name=SUFFIX, process_le
    `re.match(r"^HCR_.*_processed_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$", name)`.
 3. **Never `rglob` over `/data`.** Processed assets contain segmentation **zarr** (10k+ files);
    recursive globs walk it and stall for minutes. Use one-level `glob("*<asset>*/file.json")` or
-   check `dir / "file.json"` directly. (This bit `json_utils` â its upstream `rglob` was the cause.)
+   check `dir / "file.json"` directly. (This bit `json_utils` — its upstream `rglob` was the cause.)
 4. **`aind-data-schema` version pin.** `json_utils` hard-asserts `__version__ == "1.2.0"`; the base
-   env ships 2.x â pin `aind-data-schema==1.2.0` (no numpy pin; needs `pydantic>=2.7`, fine with
+   env ships 2.x → pin `aind-data-schema==1.2.0` (no numpy pin; needs `pydantic>=2.7`, fine with
    `pydantic<2.11`). If the capsule installs lamf-analysis (whose requirements.txt leaves
-   aind-data-schema UNPINNED â 2.x), re-pin 1.2.0 **last** in postInstall. For lean capsules that
+   aind-data-schema UNPINNED → 2.x), re-pin 1.2.0 **last** in postInstall. For lean capsules that
    only need the helper, **vendor `json_utils.py`** (it's self-contained: aind_data_schema + stdlib,
    empty `__init__`s) rather than dragging in lamf-analysis's heavy tree.
 5. **Mount names must match the target capsule's data globs.** `DataAssetsRunParam(mount=...)` becomes
    `/data/<mount>/`; set `mount = asset_name` so e.g. `HCR_{sid}_*_processed_*` resolves.
-6. **`.git` of deployed capsules under `/` is often root-owned** (pushed as root) â `claude-user`
+6. **`.git` of deployed capsules under `/` is often root-owned** (pushed as root) → `claude-user`
    cannot commit/push (and cannot complete a root-started rebase: `.git/rebase-merge/*` is
    root-owned). Resolve the working tree + `git add`, then have the user run the commit / `git
    rebase --continue` as **root**.
@@ -201,6 +201,14 @@ start_dt, run_parameters, INPUT_PROCESSING_DICT, process_name=SUFFIX, process_le
    `# cache bust` token so Code Ocean re-clones/re-installs.
 9. **Dry-run first**, log the resolved (asset id, name) tuples, and STOP with a clear message when a
     required upstream asset isn't found yet (don't silently trigger a partial run).
+10. **`/scratch/tmp` is not root-writable.** It's owned by uid 1002 (mode 775); `touch`/`mkdir`
+    there fails with `Permission denied` even as root (looks like a squash on this mount — root
+    doesn't get the usual DAC bypass). `/scratch` itself (the top-level dir, root-owned, mode 777)
+    IS root-writable — use a subdirectory directly under it (e.g. `/scratch/<task-name>/`) instead,
+    and clean it up when done. Verify writability with a quick `touch` before relying on a path.
+    Never fall back to `/tmp` or `/` for this — `/tmp` is shared with live desktop processes (X11
+    sockets, pulseaudio, VS Code sockets, language-server caches), so it's both against the "never
+    `/tmp`" rule above and unsafe to bulk-clean.
 
 ---
 
@@ -209,11 +217,18 @@ start_dt, run_parameters, INPUT_PROCESSING_DICT, process_name=SUFFIX, process_le
 | Need | Call |
 |------|------|
 | client | `cou.get_co_client()` |
-| search | `co.data_assets.search_data_assets(DataAssetSearchParams(filters=[SearchFilter(key=â¦, value=â¦)], â¦)).results` |
+| search | `co.data_assets.search_data_assets(DataAssetSearchParams(filters=[SearchFilter(key=…, value=…)], …)).results` |
 | derived list / df | `cou.get_derived_assets(sid, proc)` / `cou.get_derived_assets_df(sid, proc, add_s3_location=True)` |
 | lineage | `co.data_assets.get_data_asset(aid).provenance.data_assets` |
-| run a capsule | `co.computations.run_capsule(RunParams(capsule_id, data_assets=[â¦], named_parameters=[â¦]))` |
-| attach+run+capture | hand `PipelineMonitorSettings(...).model_dump_json()` to capsule `567b5b98-â¦` |
-| poll | `co.computations.get_computation(id).state` â `ComputationState.{Completed,Failed}` |
-| interactive capture | `co.data_assets.create_data_asset(DataAssetParams(source=Source(cloud_workstation=CloudWorkstationSource(id=os.getenv("CO_COMPUTATION_ID"), path=â¦))))` |
+| run a capsule | `co.computations.run_capsule(RunParams(capsule_id, data_assets=[…], named_parameters=[…]))` |
+| attach+run+capture | hand `PipelineMonitorSettings(...).model_dump_json()` to capsule `567b5b98-…` |
+| poll | `co.computations.get_computation(id).state` → `ComputationState.{Completed,Failed}` |
+| interactive capture | `co.data_assets.create_data_asset(DataAssetParams(source=Source(cloud_workstation=CloudWorkstationSource(id=os.getenv("CO_COMPUTATION_ID"), path=…))))` |
 | schema json | `json_utils.process_json_files(source_name, source_name, start_dt, params, INPUT_PROCESSING_DICT, SUFFIX, "subject")` |
+
+## 8. Example capsules (git repo)
+(reproducible run) https://github.com/AllenNeuralDynamics/capsule-3D-FISH-ROI-classifier
+(reproducible run) https://github.com/AllenNeuralDynamics/capsule-2p-3DFISH-autocoreg
+(interactive capsule) https://github.com/AllenNeuralDynamics/capsule-3D-FISH-ROI-labeling
+(pipeline monitor) https://github.com/AllenNeuralDynamics/Jinho_pipeline-monitor_2p-3DFISH-autocoreg
+(pipeline monitor) https://github.com/AllenNeuralDynamics/Jinho_pipeline-monitor_any-capsule_session-level

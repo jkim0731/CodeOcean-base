@@ -2,13 +2,12 @@
 set -euxo pipefail
 
 echo "Installing optional repos..."
-cd /
-git clone https://github.com/AllenNeuralDynamics/comb
+cd / && git clone https://github.com/jkim0731/claude-code-skills-codeocean
+cd / && git clone https://github.com/AllenNeuralDynamics/comb
 cd /comb && git checkout for_gcamp_validation && pip install -e .
-cd /
-git clone https://github.com/AllenNeuralDynamics/lamf-analysis
+cd / && git clone https://github.com/AllenNeuralDynamics/lamf-analysis
 cd /lamf-analysis && pip install -e .
-cd /
+
 # git clone https://github.com/jkim0731/dff_baseline_search_qc_app.git
 # cd /dff_baseline_search_qc_app && pip install -e .
 # cd /

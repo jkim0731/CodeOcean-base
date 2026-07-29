@@ -15,7 +15,6 @@ set -e
 # chmod o+rx /root/capsule/data || echo "[startup] WARNING: chmod /data failed"
 # chmod a+rwX / || echo "[startup] WARNING: chmod / failed"
 
-
 # --- prevent disk fills from crashing/killed jobs ---
 # A crash dumps full process memory to core_pattern (was /tmp/core.<pid>, ~1GB each) and
 # abandons its /tmp/tmpXXXX working dir; both pile up on the small root overlay until restart.
@@ -26,6 +25,7 @@ ulimit -c 0 2>/dev/null || true
 rm -f /tmp/core /tmp/core.* 2>/dev/null || true                          # clear leftover cores
 find /tmp -maxdepth 1 -name 'tmp*' ! -name 'claude-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 
+# run vscode setting
 bash /root/capsule/environment/vscode_setting.sh
 
 # bash /root/capsule/environment/claude_login_bypass.sh
