@@ -69,72 +69,8 @@ curl -fsSL https://claude.ai/install.sh | bash
 echo "Claude installation complete."
 echo "Claude data dir: /root/capsule/.claude"
 
-# echo "Setting up claude-user..."
-#
-# # FIX #3: catch useradd failures other than "user already exists" (exit 9).
-# # Exit code 9 = user already exists, which is fine; anything else is a real error.
-# useradd -m claude-user || { code=$?; [ $code -eq 9 ] || exit $code; }
 
-# # Make Claude binary globally accessible
-# ln -sf /root/.local/bin/claude /usr/local/bin/claude
-
-# # Let claude-user traverse required paths
-# chmod o+x /root
-# chmod o+rx /root/capsule
-# # The rest of the permissions are done by running start.sh ("startcapsule" alias)
-
-# # Ensure conda and correct env vars are available in claude-user login shells.
-# cat > /home/claude-user/.profile <<'EOF'
-# export PATH="/usr/local/bin:/opt/conda/bin:$PATH"
-# export CLAUDE_CONFIG_DIR=/root/capsule/.claude
-
-# # Make conda available in login shells
-# if [ -r /opt/conda/etc/profile.d/conda.sh ]; then
-#     . /opt/conda/etc/profile.d/conda.sh
-# fi
-
-# # Load .bashrc too if present
-# if [ -f ~/.bashrc ]; then
-#     . ~/.bashrc
-# fi
-# EOF
-# chown claude-user:claude-user /home/claude-user/.profile
-
-# echo "claude-user setup complete."
-# echo
-# echo "If Claude should edit /root/capsule/code, run:"
-# echo "  chown -R claude-user:claude-user /root/capsule/code"
-# echo
-# echo "Run Claude with:"
-# echo '  su -s /bin/bash - claude-user -c "cd /root/capsule && claude --dangerously-skip-permissions"'
-
-# # Helper aliases for root sessions.
-# # Use a shell function instead of deeply-escaped alias for claude-skip
-# # so DISPLAY/DBUS vars are forwarded cleanly without brittle quote nesting.
-# # Note: these only take effect in interactive root shells (sourced .bashrc).
-# if ! grep -q "alias claude-skip=" /root/.bashrc 2>/dev/null; then
-# cat >> /root/.bashrc <<'EOF'
-# alias startcapsule='bash /root/capsule/environment/start.sh'
-
-# # Forward display env vars to claude-user's session cleanly via a function.
-# # Must be run from an active desktop session (DISPLAY must be set).
-# claude-skip() {
-#     su -s /bin/bash - claude-user -c \
-#         "export DISPLAY='${DISPLAY}'; \
-#          export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS}'; \
-#          cd /root/capsule/code && claude --dangerously-skip-permissions"
-# }
-
-# claude-user-shell() {
-#     su -s /bin/bash - claude-user -c \
-#         "export DISPLAY='${DISPLAY}'; \
-#          export DBUS_SESSION_BUS_ADDRESS='${DBUS_SESSION_BUS_ADDRESS}'; \
-#          cd /root/capsule/code && exec bash -i"
-# }
-# EOF
-# fi
-
-
+# Setting up aliases
 if ! grep -q 'alias claude-skip=' /root/.bashrc 2>/dev/null; then
 cat >> /root/.bashrc <<'EOF'
 
