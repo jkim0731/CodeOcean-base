@@ -52,13 +52,31 @@ version pinning, root-owned `.git` under `/`, etc) that has cost real debugging 
 
 ## Local Tools / Skills
 
-- **Code Ocean run/capture** â `code/claude-code-skills/codeocean-run-capture/`.
-  Use when asked to launch a CO capsule/pipeline, attach data assets to a run, or
-  capture a computation's results as a named, tagged data asset. Supports
-  per-session (`run_per_session.sh`) and per-subject (`run_per_subject.sh`) batch
-  runs, session/subject lists from txt or CSV, and direct or pipeline-monitor
-  execution. Read `code/claude-code-skills/codeocean-run-capture/README.md`, then
-  invoke `python code/claude-code-skills/codeocean-run-capture/scripts/co_run_capture.py
-  <run|capture|status|find-asset> â¦`. Only needs `pip install codeocean` + a token
-  in `$API_SECRET`/`$CODEOCEAN_TOKEN`. Launching runs / creating assets are
-  billable â confirm capsule id, asset ids/mounts, result name and tags first.
+Code Ocean orchestration skills (running/capturing computations, data assets, app panels, git
+sync, …) come from the shared repo **`claude-code-skills-codeocean`**
+(<https://github.com/jkim0731/claude-code-skills-codeocean>), which `environment/postInstall`
+clones to **`/claude-code-skills-codeocean`**. Treat that clone as the source of truth: its
+`README.md` lists the current skills, and the set changes over time — read it (or `ls` the clone)
+rather than relying on a list here.
+
+Claude Code only auto-loads skills from `<capsule>/.claude/skills/`, so each `codeocean-*` folder
+in the clone must be **symlinked** there (README layout A). They are linked already; if the
+directory is missing or a link dangles — e.g. after an env rebuild or a fresh checkout — recreate
+them and restart Claude Code so discovery re-runs:
+
+```bash
+S=/claude-code-skills-codeocean; mkdir -p /root/capsule/.claude/skills
+for d in "$S"/codeocean-*/; do n=$(basename "$d")
+    ln -sfn "$S/$n" "/root/capsule/.claude/skills/$n"; done
+```
+
+Keep capsule-specific skills as **real folders** under `.claude/skills/` so they stay out of the
+shared repo; only the `codeocean-*` entries are symlinks into it. Pull updates with
+`git -C /claude-code-skills-codeocean pull` (links pick up new content; only a *newly added* skill
+needs re-linking) — but see `base-CLAUDE.md` CAUTION #6: a `.git` under `/` is often root-owned.
+
+These skills need `pip install codeocean` (already in this env) and a CO API token, taken from
+`$CODEOCEAN_TOKEN` / `$API_SECRET` / `$CO_TOKEN` / `$CUSTOM_KEY` or `--token`, with the domain from
+`$CODEOCEAN_DOMAIN` (default: the AIND deployment). Launching runs and creating data assets are
+**billable** — confirm capsule id, asset ids/mounts, result name and tags first, and use a dry-run
+before a real trigger.
