@@ -30,3 +30,11 @@ bash /root/capsule/environment/vscode_setting.sh
 
 # bash /root/capsule/environment/claude_login_bypass.sh
 # I don't need it, as long as firefox is updated during postInstall
+
+# --- symlink codeocean skills into .claude/skills/ ---
+mkdir -p /root/capsule/.claude/skills
+S=/claude-code-skills-codeocean
+for d in "$S"/codeocean-*/; do
+    n=$(basename "$d")
+    ln -sfn "$S/$n" "/root/capsule/.claude/skills/$n"
+done
