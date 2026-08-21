@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-echo "Installing optional repos..."
+echo "Installing basic repos..."
 cd / && git clone https://github.com/jkim0731/claude-code-skills-codeocean
+cd / && git clone https://github.com/AllenNeuralDynamics/ctl-claude-skills-pipeline-runs
+cd / && git clone https://github.com/jkim0731/claude-code-skills-misc
 cd / && git clone https://github.com/AllenNeuralDynamics/comb
 cd /comb && git checkout for_gcamp_validation && pip install -e .
 cd / && git clone https://github.com/AllenNeuralDynamics/lamf-analysis
 cd /lamf-analysis && pip install -e .
 
+# echo "Installing optional repos..."
 # git clone https://github.com/jkim0731/dff_baseline_search_qc_app.git
 # cd /dff_baseline_search_qc_app && pip install -e .
 # cd /
@@ -45,8 +48,8 @@ fi
 
 # Keep temp/cache OFF the tiny 5 GB "/" overlay (filling it locks the environment).
 # This applies to ANY process launched from a terminal â e.g. GUI apps the user
-# starts with `python -m ...`, which do NOT inherit Claude Code's settings.json env.
-# (See dev-CLAUDE.md "Temporary files".)
+# starts with `python -m ...`, which may not inherit the coding agent's environment.
+# (See code/AGENTS.md "Core rules".)
 if ! grep -q 'TMPDIR=/scratch/tmp' /root/.bashrc 2>/dev/null; then
 cat >> /root/.bashrc <<'EOF'
 

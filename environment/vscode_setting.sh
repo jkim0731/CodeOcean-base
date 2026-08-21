@@ -5,6 +5,8 @@ echo "Writing VS Code profile settings for stable kernel detection..."
 mkdir -p /root/capsule/scratch/.vscode-root/User
 cat > /root/capsule/scratch/.vscode-root/User/settings.json << 'EOF'
 {
+  "extensions.autoCheckUpdates": false,
+  "extensions.autoUpdate": false,
   "python.useEnvironmentsExtension": false,
   "python.defaultInterpreterPath": "/opt/conda/bin/python3",
   "python.condaPath": "/opt/conda/bin/conda",
