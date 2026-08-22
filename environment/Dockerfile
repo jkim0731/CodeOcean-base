@@ -57,11 +57,12 @@ RUN pip install -U --no-cache-dir \
 # Register Python kernel for Jupyter
 RUN python3 -m ipykernel install --sys-prefix --name python3 --display-name "Python 3"
 
-# Create VS Code data directory and install extensions
+# Create VS Code data directory and install extensions, then archive for fast scratch extraction at startup
 RUN /opt/vscode/bin/code --install-extension ms-python.python --force --user-data-dir=/root/capsule/scratch/.vscode-root --no-sandbox || true \
     && /opt/vscode/bin/code --install-extension ms-toolsai.jupyter --force --user-data-dir=/root/capsule/scratch/.vscode-root --no-sandbox || true \
     && /opt/vscode/bin/code --install-extension GitHub.copilot-chat --force --user-data-dir=/root/capsule/scratch/.vscode-root --no-sandbox || true \
-    && /opt/vscode/bin/code --install-extension anthropic.claude-code --force --user-data-dir=/root/capsule/scratch/.vscode-root --no-sandbox || true
+    && /opt/vscode/bin/code --install-extension anthropic.claude-code --force --user-data-dir=/root/capsule/scratch/.vscode-root --no-sandbox || true \
+    && tar -czf /opt/vscode-extensions.tar.gz -C /root/.vscode extensions
 
 COPY postInstall /
 RUN --mount=type=secret,id=secrets . /run/secrets/secrets \

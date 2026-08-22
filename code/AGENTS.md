@@ -28,6 +28,7 @@ in `/root/capsule/code/background_information.md`.
 - Confirm identifiers, mounts, names, tags, and expected cost before billable Code Ocean actions.
   Use a dry run whenever supported.
 - Inspect before editing, make focused changes, and validate the result.
+- When summarizing or reporting, make it .md file then convert to html.
 
 ## Code Ocean distinctions
 

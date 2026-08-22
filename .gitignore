@@ -3,6 +3,7 @@
 .claude/file-history
 .claude/projects
 .claude/.credentials.json
+.claude
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

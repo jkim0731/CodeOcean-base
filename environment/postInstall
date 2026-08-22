@@ -6,9 +6,9 @@ cd / && git clone https://github.com/jkim0731/claude-code-skills-codeocean
 cd / && git clone https://github.com/AllenNeuralDynamics/ctl-claude-skills-pipeline-runs
 cd / && git clone https://github.com/jkim0731/claude-code-skills-misc
 cd / && git clone https://github.com/AllenNeuralDynamics/comb
-cd /comb && git checkout for_gcamp_validation && pip install -e .
+cd /comb && git checkout for_gcamp_validation && pip install -e . --no-cache-dir
 cd / && git clone https://github.com/AllenNeuralDynamics/lamf-analysis
-cd /lamf-analysis && pip install -e .
+cd /lamf-analysis && pip install -e . --no-cache-dir
 
 # echo "Installing optional repos..."
 # git clone https://github.com/jkim0731/dff_baseline_search_qc_app.git
@@ -53,7 +53,7 @@ fi
 if ! grep -q 'TMPDIR=/scratch/tmp' /root/.bashrc 2>/dev/null; then
 cat >> /root/.bashrc <<'EOF'
 
-# Redirect temp/cache onto /scratch (8 EB) â never /tmp or / (5 GB overlay)
+# Redirect temp/cache onto /scratch (8 EB) - never /tmp or / (5 GB overlay)
 export TMPDIR=/scratch/tmp
 export TEMP=/scratch/tmp
 export TMP=/scratch/tmp
@@ -79,6 +79,7 @@ cat >> /root/.bashrc <<'EOF'
 
 alias claude-skip='cd /root/capsule && IS_SANDBOX=1 claude --dangerously-skip-permissions'
 alias startcapsule='bash /root/capsule/environment/start.sh'
+alias cleanupdisk='bash /root/capsule/environment/cleanup_disk.sh'
 
 EOF
 fi

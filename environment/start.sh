@@ -320,11 +320,49 @@ symlink_agent_skills() {
     return "$status"
 }
 
+_redirect_vscode_extensions() {
+    local dst="$SCRATCH_ROOT/.vscode-extensions"
+    local src="$ROOT_HOME/.vscode/extensions"
+    local archive=/opt/vscode-extensions.tar.gz
+
+    if [ -L "$src" ]; then
+        echo "[startup] .vscode/extensions already symlinked"
+        return 0
+    fi
+
+    if [ ! -d "$dst" ]; then
+        if [ -f "$archive" ]; then
+            echo "[startup] extracting VS Code extensions from archive to $dst"
+            mkdir -p "$SCRATCH_ROOT"
+            if tar -xzf "$archive" -C "$SCRATCH_ROOT" && mv "$SCRATCH_ROOT/extensions" "$dst"; then
+                echo "[startup] extraction complete"
+            else
+                echo "[startup] WARNING: failed to extract $archive; falling back to copy"
+                _redirect_to_scratch "$src" "$dst" || return 1
+                return 0
+            fi
+        else
+            echo "[startup] no archive found; falling back to copy for .vscode/extensions"
+            _redirect_to_scratch "$src" "$dst" || return 1
+            return 0
+        fi
+    fi
+
+    if [ -d "$src" ]; then
+        _startup_safe_rm_rf "$src" || return 1
+    fi
+    if ! ln -sfn "$dst" "$src"; then
+        echo "[startup] WARNING: failed to symlink $src -> $dst"
+        return 1
+    fi
+    echo "[startup] redirect ready: $src -> $dst"
+}
+
 redirect_root_directories() {
     local status=0
 
     echo "[startup] redirecting overlay-heavy root directories to $SCRATCH_ROOT"
-    _redirect_to_scratch "$ROOT_HOME/.vscode/extensions" "$SCRATCH_ROOT/.vscode-extensions" || status=1
+    _redirect_vscode_extensions || status=1
     _redirect_to_scratch "$ROOT_HOME/.cache/pip" "$SCRATCH_ROOT/.cache/pip" || status=1
     _redirect_to_scratch "$ROOT_HOME/.local/share/Trash" "$SCRATCH_ROOT/.root-trash" || status=1
     _redirect_to_scratch "$ROOT_HOME/.copilot" "$SCRATCH_ROOT/.copilot" || status=1
