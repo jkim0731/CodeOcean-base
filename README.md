@@ -1,10 +1,11 @@
-# Base for agentic coding environments
+# Base for agentic coding environments in CodeOcean
 - Supports multiple coding agents, including Copilot, Codex, and Claude Code
 
-## Use cases
-- Duplicate and make a new dev environment
-- Duplicate for a new base to control capsules and pipelines
-- Different type of capsule served from different branch: ubuntu, ubuntu-GPU, vscode, vscode-GPU
+## How to use
+- `Create` -> under `Capsule`, choose `copy from Git` (not `clone`)
+- Use this repo's url: https://github.com/jkim0731/CodeOcean-agentic-coding-base
+- (optional) to track the new capsule from git, from the capsule, use `capsule` -> `Clone via Git...`
+- (optional) to track the contents of this repo (e.g., updated capsule infos, updated agent instructions), clone this repo in the capsule using postInstall.
 
 ## Features
 - Runtime-neutral agent instructions (`code/AGENTS.md`)
