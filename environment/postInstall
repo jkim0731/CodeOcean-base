@@ -5,6 +5,8 @@ echo "Installing basic repos..."
 cd / && git clone https://github.com/jkim0731/claude-code-skills-codeocean
 cd / && git clone https://github.com/AllenNeuralDynamics/ctl-claude-skills-pipeline-runs
 cd / && git clone https://github.com/jkim0731/claude-code-skills-misc
+cd / && git clone https://github.com/AllenNeuralDynamics/cell_types_and_learning_reports
+
 cd / && git clone https://github.com/AllenNeuralDynamics/comb
 cd /comb && git checkout for_gcamp_validation && pip install -e . --no-cache-dir
 cd / && git clone https://github.com/AllenNeuralDynamics/lamf-analysis
